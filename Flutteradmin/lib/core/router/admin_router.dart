@@ -1,10 +1,27 @@
 import 'package:go_router/go_router.dart';
 import '../../screens/auth/admin_login_screen.dart';
 import '../../screens/admin_main_layout.dart';
+import '../../screens/kds/kds_screen.dart';
 import '../../screens/orders/admin_order_detail_screen.dart';
+import '../../services/storage_service.dart';
 
 final adminRouter = GoRouter(
-  initialLocation: '/admin-login',
+  initialLocation: '/kds',
+  redirect: (context, state) async {
+    final token = await AdminStorageService().getToken();
+    final isAuthenticated = token != null && token.isNotEmpty;
+    final isLoginPage = state.uri.path == '/admin-login';
+
+    if (!isAuthenticated && !isLoginPage) {
+      return '/admin-login';
+    }
+
+    if (isAuthenticated && isLoginPage) {
+      return '/kds';
+    }
+
+    return null;
+  },
   routes: [
     GoRoute(
       path: '/admin-login',
@@ -12,7 +29,7 @@ final adminRouter = GoRouter(
     ),
     GoRoute(
       path: '/kds',
-      builder: (context, state) => const AdminMainLayout(initialIndex: 0),
+      builder: (context, state) => const KdsScreen(),
     ),
     GoRoute(
       path: '/admin-orders',
@@ -24,7 +41,7 @@ final adminRouter = GoRouter(
     ),
     GoRoute(
       path: '/admin-analytics',
-      builder: (context, state) => const AdminMainLayout(initialIndex: 3),
+      builder: (context, state) => const AdminMainLayout(initialIndex: 0),
     ),
     GoRoute(
       path: '/admin-settings',
