@@ -34,8 +34,49 @@ class ApiClient {
           return handler.next(response);
         },
         onError: (DioException e, handler) async {
-          if (e.response?.statusCode == 401) {
-            // Handle unauthenticated if necessary
+          final isAuthEndpoint = e.requestOptions.path.contains('/auth/login') ||
+              e.requestOptions.path.contains('/auth/refresh') ||
+              e.requestOptions.path.contains('/auth/register');
+
+          final alreadyRetried = e.requestOptions.extra['retry_count'] != null;
+
+          if (e.response?.statusCode == 401 && !isAuthEndpoint && !alreadyRetried) {
+            final storage = StorageService();
+            final refreshToken = await storage.getRefreshToken();
+
+            if (refreshToken != null && refreshToken.isNotEmpty) {
+              try {
+                // Use a bare Dio instance to prevent infinite recursive interception
+                final refreshDio = Dio(BaseOptions(baseUrl: ApiEndpoints.baseUrl));
+                final refreshRes = await refreshDio.post(
+                  ApiEndpoints.refreshToken,
+                  data: {'refreshToken': refreshToken},
+                );
+
+                final data = refreshRes.data['data'] ?? refreshRes.data;
+                final newAccessToken = data['accessToken'] ?? data['token'];
+                final newRefreshToken = data['refreshToken'] ?? refreshToken;
+
+                if (newAccessToken != null && newAccessToken.toString().isNotEmpty) {
+                  await storage.saveTokens(
+                    accessToken: newAccessToken.toString(),
+                    refreshToken: newRefreshToken.toString(),
+                  );
+
+                  // Update failed request headers and retry
+                  final requestOptions = e.requestOptions;
+                  requestOptions.headers['Authorization'] = 'Bearer $newAccessToken';
+                  requestOptions.extra['retry_count'] = 1;
+
+                  final retryResponse = await dio.fetch(requestOptions);
+                  return handler.resolve(retryResponse);
+                }
+              } catch (_) {
+                await storage.clearTokens();
+              }
+            } else {
+              await storage.clearTokens();
+            }
           }
           return handler.next(e);
         },

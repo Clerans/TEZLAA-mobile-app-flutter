@@ -15,10 +15,14 @@ class AuthService {
 
     final data = res.data['data'] ?? res.data;
     final token = data['token'] ?? data['accessToken'];
+    final refreshToken = data['refreshToken'];
     final userJson = data['user'] ?? data;
 
     if (token != null) {
-      await _storage.saveTokens(accessToken: token);
+      await _storage.saveTokens(
+        accessToken: token,
+        refreshToken: refreshToken is String ? refreshToken : null,
+      );
     }
 
     return UserModel.fromJson(userJson);
@@ -31,6 +35,7 @@ class AuthService {
     String? phone,
   }) async {
     final res = await _client.post(ApiEndpoints.register, data: {
+      'fullName': name.trim(),
       'name': name.trim(),
       'email': email.trim().toLowerCase(),
       'password': password,
@@ -39,13 +44,46 @@ class AuthService {
 
     final data = res.data['data'] ?? res.data;
     final token = data['token'] ?? data['accessToken'];
+    final refreshToken = data['refreshToken'];
     final userJson = data['user'] ?? data;
 
     if (token != null) {
-      await _storage.saveTokens(accessToken: token);
+      await _storage.saveTokens(
+        accessToken: token,
+        refreshToken: refreshToken is String ? refreshToken : null,
+      );
     }
 
     return UserModel.fromJson(userJson);
+  }
+
+  Future<bool> refreshTokens() async {
+    try {
+      final currentRefresh = await _storage.getRefreshToken();
+      if (currentRefresh == null || currentRefresh.isEmpty) {
+        return false;
+      }
+
+      final res = await _client.dio.post(ApiEndpoints.refreshToken, data: {
+        'refreshToken': currentRefresh,
+      });
+
+      final data = res.data['data'] ?? res.data;
+      final newAccessToken = data['accessToken'] ?? data['token'];
+      final newRefreshToken = data['refreshToken'] ?? currentRefresh;
+
+      if (newAccessToken != null) {
+        await _storage.saveTokens(
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken is String ? newRefreshToken : null,
+        );
+        return true;
+      }
+      return false;
+    } catch (_) {
+      await _storage.clearTokens();
+      return false;
+    }
   }
 
   Future<void> forgotPassword(String email) async {
