@@ -1,0 +1,559 @@
+// Prisma Schema for TEZLAA Artisan Food & Café Mobile Platform
+// Designed for high performance, modularity, and scalability
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --------------------------------------------------------
+// ENUMS
+// --------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  BRANCH_STAFF
+  BRANCH_MANAGER
+  ADMIN
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  READY_FOR_PICKUP
+  PICKED_UP
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CARD
+  ONLINE_GATEWAY
+  CASH_ON_DELIVERY
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum ReservationStatus {
+  RESERVED
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum LoyaltyTxType {
+  EARNED
+  REDEEMED
+  EXPIRED
+  BONUS
+  BIRTHDAY
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum NotificationType {
+  ORDER
+  PROMOTION
+  LOYALTY
+  SYSTEM
+}
+
+// --------------------------------------------------------
+// USER & ADDRESS
+// --------------------------------------------------------
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  phone               String?              @unique
+  passwordHash        String
+  fullName            String
+  avatarUrl           String?
+  role                UserRole             @default(CUSTOMER)
+  branchId            String?
+  branch              Branch?              @relation("BranchStaff", fields: [branchId], references: [id], onDelete: SetNull)
+  isVerified          Boolean              @default(false)
+  otpCode             String?              // Stores secure hash of active OTP
+  otpExpiresAt        DateTime?
+  otpAttempts         Int                  @default(0)
+  otpLastSentAt       DateTime?
+  birthday            DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  addresses           Address[]
+  orders              Order[]
+  favourites          Favourite[]
+  loyaltyAccount      LoyaltyAccount?
+  loyaltyReservations LoyaltyReservation[]
+  couponReservations  CouponReservation[]
+  loyaltyAwards       LoyaltyAward[]
+  notifications       Notification[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([branchId])
+}
+
+model Address {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label           String    // e.g. "Home", "Office", "Apartment"
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  postalCode      String?
+  latitude        Float?
+  longitude       Float?
+  deliveryNotes   String?
+  isDefault       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  orders          Order[]
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------
+// BRANCH & STORE LOCATIONS
+// --------------------------------------------------------
+
+model Branch {
+  id              String    @id @default(uuid())
+  name            String    // e.g. "TEZLAA Malabe Flagship Café"
+  slug            String    @unique
+  address         String
+  phone           String
+  email           String?
+  latitude        Float
+  longitude       Float
+  deliveryRadiusKm Float    @default(20.0)
+  openingHours    String    // e.g. "07:00 AM - 10:00 PM Daily"
+  isActive        Boolean   @default(true)
+  imageUrl        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  orders          Order[]
+  staffUsers      User[]    @relation("BranchStaff")
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+// --------------------------------------------------------
+// CATEGORY & PRODUCTS (FOOD / BEVERAGE / BAKERY)
+// --------------------------------------------------------
+
+model Category {
+  id              String    @id @default(uuid())
+  name            String    // e.g. "Artisan Coffee", "Croissants", "Pâtisserie"
+  slug            String    @unique
+  description     String?
+  imageUrl        String?
+  displayOrder    Int       @default(0)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  products        Product[]
+
+  @@index([slug])
+  @@index([isActive, displayOrder])
+}
+
+model Product {
+  id                String            @id @default(uuid())
+  categoryId        String
+  category          Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  name              String
+  slug              String            @unique
+  description       String
+  price             Float             // Base price in LKR
+  discountedPrice   Float?            // Optional sale price
+  imageUrl          String
+  isVegetarian      Boolean           @default(false)
+  isAvailable       Boolean           @default(true)
+  isFeatured        Boolean           @default(false)
+  isRecommended     Boolean           @default(false)
+  isFreshToday      Boolean           @default(false)
+  preparationTime   Int?              // in minutes
+  calories          Int?              // in kcal
+  allergens         String[]          @default([])
+  ingredients       String[]          @default([])
+  rating            Float             @default(5.0)
+  ratingCount       Int               @default(0)
+  displayOrder      Int               @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  variants          ProductVariant[]
+  addons            ProductAddon[]
+  orderItems        OrderItem[]
+  favourites        Favourite[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([isFeatured])
+  @@index([isRecommended])
+  @@index([isFreshToday])
+}
+
+model ProductVariant {
+  id              String       @id @default(uuid())
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name            String       // e.g. "Small (8oz)", "Regular (12oz)", "Large (16oz)"
+  price           Float        // Adjusted price or surcharge
+  sku             String?
+  isAvailable     Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  orderItems      OrderItem[]
+
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+model ProductAddon {
+  id              String       @id @default(uuid())
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name            String       // e.g. "Extra Espresso Shot", "Oat Milk", "Vanilla Syrup"
+  price           Float        // Addon surcharge
+  maxQuantity     Int          @default(1)
+  isRequired      Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  orderItemAddons OrderItemAddon[]
+
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+// --------------------------------------------------------
+// ORDER & CHECKOUT
+// --------------------------------------------------------
+
+model Order {
+  id                    String              @id @default(uuid())
+  orderNumber           String              @unique // e.g. "TZL-20260827-001"
+  idempotencyKey        String?             @unique
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  branchId              String
+  branch                Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  addressId             String?
+  address               Address?            @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  orderType             OrderType           @default(DELIVERY)
+  status                OrderStatus         @default(PENDING)
+  
+  subtotal              Float
+  deliveryFee           Float               @default(0.0)
+  discount              Float               @default(0.0)
+  loyaltyDiscount       Float               @default(0.0)
+  grandTotal            Float
+
+  deliveryInstructions  String?
+  pickupTime            DateTime?
+  estimatedDeliveryTime DateTime?
+  customerNotes         String?
+  couponCode            String?
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  items                 OrderItem[]
+  payments              Payment[]
+  loyaltyTransactions   LoyaltyTransaction[]
+  loyaltyReservation   LoyaltyReservation?
+  couponReservation    CouponReservation?
+  loyaltyAward         LoyaltyAward?
+
+  @@index([userId])
+  @@index([branchId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id                  String             @id @default(uuid())
+  orderId             String
+  order               Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product            @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variantId           String?
+  variant             ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  quantity            Int                @default(1)
+  unitPrice           Float
+  totalPrice          Float
+  specialInstructions String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  addons              OrderItemAddon[]
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderItemAddon {
+  id                  String          @id @default(uuid())
+  orderItemId         String
+  orderItem           OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  addonId             String?
+  addon               ProductAddon?   @relation(fields: [addonId], references: [id], onDelete: SetNull)
+  name                String
+  price               Float
+  quantity            Int             @default(1)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([orderItemId])
+}
+
+// --------------------------------------------------------
+// PAYMENT & TRANSACTIONS
+// --------------------------------------------------------
+
+model Payment {
+  id                  String         @id @default(uuid())
+  orderId             String
+  order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  paymentMethod       PaymentMethod
+  status              PaymentStatus  @default(PENDING)
+  transactionId       String?        @unique
+  amount              Float
+  currency            String         @default("LKR")
+  gatewayProvider     String?        // e.g. "PayHere", "Stripe", "Cash"
+  gatewayResponse     Json?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+}
+
+// --------------------------------------------------------
+// FAVOURITES & WISHLIST
+// --------------------------------------------------------
+
+model Favourite {
+  id                  String         @id @default(uuid())
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt           DateTime       @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId])
+}
+
+// --------------------------------------------------------
+// PROMOTIONS & COUPONS
+// --------------------------------------------------------
+
+model Promotion {
+  id                  String         @id @default(uuid())
+  title               String         // e.g. "Artisan Coffee Week"
+  subtitle            String?
+  bannerImageUrl      String
+  discountPercentage  Float?
+  discountAmount      Float?
+  promoCode           String?
+  actionUrl           String?
+  startDate           DateTime
+  endDate             DateTime
+  isActive            Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([isActive])
+}
+
+model Coupon {
+  id                  String               @id @default(uuid())
+  code                String               @unique
+  description         String?
+  discountType        DiscountType         @default(PERCENTAGE)
+  discountValue       Float                // e.g. 15 for 15% or 500 for Rs.500
+  minOrderValue       Float                @default(0.0)
+  maxDiscount         Float?               // Cap for percentage discounts
+  validFrom           DateTime
+  validUntil          DateTime
+  usageLimit          Int?                 // Total allowed redemptions
+  usageCount          Int                  @default(0)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  couponReservations  CouponReservation[]
+
+  @@index([code])
+  @@index([isActive])
+}
+
+// --------------------------------------------------------
+// TEZLAA CIRCLE / LOYALTY PROGRAM
+// --------------------------------------------------------
+
+model LoyaltyAccount {
+  id                  String                @id @default(uuid())
+  userId              String                @unique
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  points              Int                   @default(0)
+  lifetimePoints      Int                   @default(0)
+  tier                LoyaltyTier           @default(BRONZE)
+  joinedAt            DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  transactions        LoyaltyTransaction[]
+
+  @@index([userId])
+  @@index([tier])
+}
+
+model LoyaltyTransaction {
+  id                  String          @id @default(uuid())
+  loyaltyAccountId    String
+  loyaltyAccount      LoyaltyAccount  @relation(fields: [loyaltyAccountId], references: [id], onDelete: Cascade)
+  orderId             String?
+  order               Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  points              Int             // Positive for earned/bonus, negative for redeemed
+  type                LoyaltyTxType   @default(EARNED)
+  description         String
+  createdAt           DateTime        @default(now())
+
+  @@index([loyaltyAccountId])
+  @@index([orderId])
+}
+
+model Reward {
+  id                  String                @id @default(uuid())
+  title               String                // e.g. "Complimentary Cold Brew", "Free Croissant"
+  description         String
+  pointsRequired      Int                   // e.g. 150 points
+  rewardType          String                // "FREE_ITEM", "DISCOUNT_VOUCHER"
+  discountValue       Float?
+  imageUrl            String?
+  isActive            Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  loyaltyReservations LoyaltyReservation[]
+
+  @@index([isActive])
+}
+
+// --------------------------------------------------------
+// RESERVATIONS & IDEMPOTENCY MODELS
+// --------------------------------------------------------
+
+model LoyaltyReservation {
+  id                  String             @id @default(uuid())
+  userId              String
+  orderId             String             @unique
+  rewardId            String
+  points              Int
+  status              ReservationStatus  @default(RESERVED)
+  createdAt           DateTime           @default(now())
+  expiresAt           DateTime?
+  consumedAt          DateTime?
+  releasedAt          DateTime?
+
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order               Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reward              Reward             @relation(fields: [rewardId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model CouponReservation {
+  id                  String             @id @default(uuid())
+  userId              String
+  orderId             String             @unique
+  couponId            String
+  couponCode          String
+  status              ReservationStatus  @default(RESERVED)
+  createdAt           DateTime           @default(now())
+  expiresAt           DateTime?
+  consumedAt          DateTime?
+  releasedAt          DateTime?
+
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order               Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  coupon              Coupon             @relation(fields: [couponId], references: [id], onDelete: Restrict)
+
+  @@index([couponId])
+  @@index([userId])
+  @@index([status])
+}
+
+model LoyaltyAward {
+  id                  String    @id @default(uuid())
+  orderId             String    @unique
+  userId              String
+  points              Int
+  createdAt           DateTime  @default(now())
+
+  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------
+// NOTIFICATIONS
+// --------------------------------------------------------
+
+model Notification {
+  id                  String            @id @default(uuid())
+  userId              String
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title               String
+  message             String
+  type                NotificationType  @default(SYSTEM)
+  isRead              Boolean           @default(false)
+  metadata            Json?
+  createdAt           DateTime          @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
