@@ -298,8 +298,9 @@ class _VerifyAccountScreenState extends ConsumerState<VerifyAccountScreen> {
                   const SizedBox(height: 24),
 
                   // Resend Timer Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         "Didn't receive the code? ",

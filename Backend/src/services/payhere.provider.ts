@@ -120,11 +120,16 @@ export class PayHereProvider {
     const formattedAmount = params.amount.toFixed(2);
     const hash = this.generateCheckoutHash(params.orderNumber, params.amount, currency);
 
+    const notifyUrl = params.notifyUrl || env.PAYHERE_NOTIFY_URL;
+    if (!notifyUrl && !this.isSandbox) {
+      throw ApiError.badRequest('PAYHERE_NOTIFY_URL must be explicitly configured for production payment processing.');
+    }
+
     return {
       merchant_id: this.merchantId,
       return_url: params.returnUrl || 'https://sandbox.payhere.lk/pay/payment-complete',
       cancel_url: params.cancelUrl || 'https://sandbox.payhere.lk/pay/payment-cancel',
-      notify_url: params.notifyUrl || env.PAYHERE_NOTIFY_URL || 'https://sandbox.payhere.lk/pay/notify',
+      notify_url: notifyUrl || 'https://sandbox.payhere.lk/pay/notify',
       order_id: params.orderNumber,
       items: params.itemsSummary || `TEZLAA Artisan Café Order #${params.orderNumber}`,
       currency,

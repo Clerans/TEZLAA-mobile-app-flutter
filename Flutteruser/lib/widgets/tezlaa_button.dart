@@ -128,14 +128,19 @@ class TezlaaButton extends StatelessWidget {
                     icon!,
                     const SizedBox(width: 8),
                   ],
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: fontSize,
-                      fontWeight: size == TezlaaButtonSize.lg
-                          ? FontWeight.w700
-                          : FontWeight.w600,
+                  Flexible(
+                    child: Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: fontSize,
+                        fontWeight: size == TezlaaButtonSize.lg
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],

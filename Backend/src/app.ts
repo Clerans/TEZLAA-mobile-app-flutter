@@ -17,9 +17,17 @@ export const createApp = (): Express => {
   app.use(helmet());
 
   // CORS Configuration
+  const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
   app.use(
     cors({
-      origin: env.CORS_ORIGIN,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, Postman, server-to-server webhooks)
+        if (!origin) return callback(null, true);
+        if (env.CORS_ORIGIN === '*' || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new ApiError(403, `CORS origin '${origin}' not permitted`));
+      },
       credentials: true,
     })
   );
