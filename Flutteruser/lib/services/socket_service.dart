@@ -47,28 +47,21 @@ class SocketService {
     _socket?.emit('leave:order', {'orderId': orderId});
   }
 
-  void onOrderStatusUpdated(Function(Map<String, dynamic>) callback) {
-    _socket?.on('order:status_updated', (data) {
+  void Function() onOrderStatusUpdated(Function(Map<String, dynamic>) callback) {
+    void handler(dynamic data) {
       if (data is Map<String, dynamic>) {
         callback(data);
       }
-    });
-    _socket?.on('order:status-updated', (data) {
-      if (data is Map<String, dynamic>) {
-        callback(data);
-      }
-    });
-    _socket?.on('order:updated', (data) {
-      if (data is Map<String, dynamic>) {
-        callback(data);
-      }
-    });
+    }
+
+    _socket?.on('order:status_updated', handler);
+    return () {
+      _socket?.off('order:status_updated', handler);
+    };
   }
 
   void offOrderStatusUpdated() {
     _socket?.off('order:status_updated');
-    _socket?.off('order:status-updated');
-    _socket?.off('order:updated');
   }
 
   void disconnect() {

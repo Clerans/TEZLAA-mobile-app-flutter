@@ -40,29 +40,20 @@ class AdminSocketService {
       _socket?.emit('join:kds', {'branchId': branchId});
     });
 
-    _socket?.on('order:created', (data) {
+    Timer? debounceTimer;
+    void handleIncomingEvent(dynamic data) {
       if (data is Map<String, dynamic>) {
-        _orderEventController.add(data);
+        debounceTimer?.cancel();
+        debounceTimer = Timer(const Duration(milliseconds: 300), () {
+          if (!_orderEventController.isClosed) {
+            _orderEventController.add(data);
+          }
+        });
       }
-    });
+    }
 
-    _socket?.on('order:new', (data) {
-      if (data is Map<String, dynamic>) {
-        _orderEventController.add(data);
-      }
-    });
-
-    _socket?.on('order:status_updated', (data) {
-      if (data is Map<String, dynamic>) {
-        _orderEventController.add(data);
-      }
-    });
-
-    _socket?.on('order:updated', (data) {
-      if (data is Map<String, dynamic>) {
-        _orderEventController.add(data);
-      }
-    });
+    _socket?.on('order:created', handleIncomingEvent);
+    _socket?.on('order:status_updated', handleIncomingEvent);
 
     _socket?.onDisconnect((_) {
       debugPrint('AdminSocketService: Disconnected from live socket');

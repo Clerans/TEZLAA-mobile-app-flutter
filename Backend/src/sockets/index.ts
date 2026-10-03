@@ -48,7 +48,6 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
       socket.join('admin');
       console.log(`👑 Admin socket ${socket.id} joined admin:orders & admin rooms`);
     } else if (user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
-      socket.join('admin:orders');
       if (user.branchId) {
         socket.join(`branch:${user.branchId}`);
         console.log(`🏢 Staff socket ${socket.id} joined branch room: branch:${user.branchId}`);
@@ -56,14 +55,23 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
     }
 
     const handleJoinKds = (data?: any) => {
-      if (user?.role === 'ADMIN' || user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
+      if (user?.role === 'ADMIN') {
         socket.join('admin:orders');
-        const targetBranch = data?.branchId || user.branchId;
+        const targetBranch = data?.branchId;
         if (targetBranch) {
           socket.join(`branch:${targetBranch}`);
-          console.log(`🍳 Socket ${socket.id} joined KDS branch room: branch:${targetBranch}`);
+          console.log(`🍳 Admin socket ${socket.id} joined KDS branch room: branch:${targetBranch}`);
         }
         socket.emit('kds:joined', { success: true });
+      } else if (user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
+        // Strict branch isolation: staff can ONLY join their own assigned branch
+        if (user.branchId) {
+          socket.join(`branch:${user.branchId}`);
+          console.log(`🍳 Staff socket ${socket.id} joined KDS branch room: branch:${user.branchId}`);
+          socket.emit('kds:joined', { success: true });
+        } else {
+          socket.emit('socket:error', { message: 'No branch assigned to staff account' });
+        }
       }
     };
 

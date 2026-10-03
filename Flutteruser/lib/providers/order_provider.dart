@@ -16,13 +16,14 @@ final orderDetailProvider = FutureProvider.family<OrderModel, String>((ref, id) 
 
   await socket.connect();
   socket.joinOrder(id);
-  socket.onOrderStatusUpdated((payload) {
+  final unbind = socket.onOrderStatusUpdated((payload) {
     if (payload['orderId'] == id || payload['orderNumber'] == id) {
       ref.invalidateSelf();
     }
   });
 
   ref.onDispose(() {
+    unbind();
     socket.leaveOrder(id);
   });
 
