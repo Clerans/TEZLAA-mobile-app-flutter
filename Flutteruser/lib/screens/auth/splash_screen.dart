@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,22 +12,30 @@ class SplashScreen extends ConsumerStatefulWidget {
 }
 
 class _SplashScreenState extends ConsumerState<SplashScreen> {
+  Timer? _timer;
+
   @override
   void initState() {
     super.initState();
-    _navigate();
+    _startTimer();
   }
 
-  Future<void> _navigate() async {
-    await Future.delayed(const Duration(milliseconds: 1800));
-    if (!mounted) return;
+  void _startTimer() {
+    _timer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      final authState = ref.read(authProvider);
+      if (authState.isAuthenticated) {
+        context.go('/home');
+      } else {
+        context.go('/home');
+      }
+    });
+  }
 
-    final authState = ref.read(authProvider);
-    if (authState.isAuthenticated) {
-      context.go('/home');
-    } else {
-      context.go('/home');
-    }
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
