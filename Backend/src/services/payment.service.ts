@@ -298,8 +298,37 @@ export class PaymentService {
       }, order.branchId);
 
       return { success: true, status: 'COMPLETED', message: 'Payment successfully completed' };
+    } else if (statusCode === '0') {
+      // PENDING - e.g. bank verification or asynchronous authorization
+      await prisma.$transaction(async (tx) => {
+        const paymentRecord = order.payments.find((p) => p.paymentMethod === PaymentMethod.CARD) || order.payments[0];
+        if (paymentRecord) {
+          await tx.payment.update({
+            where: { id: paymentRecord.id },
+            data: {
+              status: PaymentStatus.PENDING,
+              transactionId: payload.payment_id || paymentRecord.transactionId,
+              gatewayProvider: payload.method || 'PayHere',
+              gatewayResponse: JSON.parse(JSON.stringify(payload)),
+            },
+          });
+        }
+        // NOTE: Reservations are RETAINED for pending authorization. Do NOT release.
+      }, { timeout: 20000, maxWait: 10000 });
+
+      console.log(`[PayHere Webhook] ⏳ Order ${order.orderNumber} payment is PENDING authorization.`);
+
+      emitOrderStatusUpdated(order.id, order.userId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: PaymentStatus.PENDING,
+        updatedAt: new Date(),
+      }, order.branchId);
+
+      return { success: true, status: 'PENDING', message: 'Payment authorization is pending' };
     } else if (statusCode === '-1') {
-      // CANCELLED
+      // CANCELLED by user
       await prisma.$transaction(async (tx) => {
         const paymentRecord = order.payments.find((p) => p.paymentMethod === PaymentMethod.CARD) || order.payments[0];
         if (paymentRecord) {
@@ -346,8 +375,8 @@ export class PaymentService {
       }, order.branchId);
 
       return { success: false, status: 'CANCELLED', message: 'Payment cancelled by user' };
-    } else {
-      // FAILED / CHARGEBACK (-2, -3, etc.)
+    } else if (statusCode === '-2') {
+      // FAILED
       await prisma.$transaction(async (tx) => {
         const paymentRecord = order.payments.find((p) => p.paymentMethod === PaymentMethod.CARD) || order.payments[0];
         if (paymentRecord) {
@@ -389,6 +418,68 @@ export class PaymentService {
       }, order.branchId);
 
       return { success: false, status: 'FAILED', message: `Payment failed with status code ${statusCode}` };
+    } else if (statusCode === '-3') {
+      // CHARGEBACK - preserve audit information & flag for reconciliation
+      await prisma.$transaction(async (tx) => {
+        const paymentRecord = order.payments.find((p) => p.paymentMethod === PaymentMethod.CARD) || order.payments[0];
+        if (paymentRecord) {
+          await tx.payment.update({
+            where: { id: paymentRecord.id },
+            data: {
+              status: PaymentStatus.REFUNDED,
+              transactionId: payload.payment_id || paymentRecord.transactionId,
+              gatewayProvider: payload.method || 'PayHere',
+              gatewayResponse: JSON.parse(JSON.stringify({
+                ...payload,
+                chargeback: true,
+                flaggedForReconciliation: true,
+                flaggedAt: new Date(),
+              })),
+            },
+          });
+        }
+
+        // Reversal of loyalty points if redeemed
+        if (order.loyaltyReservation && order.loyaltyReservation.status === ReservationStatus.CONSUMED) {
+          const account = await tx.loyaltyAccount.findUnique({
+            where: { userId: order.userId },
+          });
+
+          if (account) {
+            await tx.loyaltyAccount.update({
+              where: { id: account.id },
+              data: {
+                points: { increment: order.loyaltyReservation.points },
+              },
+            });
+
+            await tx.loyaltyTransaction.create({
+              data: {
+                loyaltyAccountId: account.id,
+                orderId: order.id,
+                points: order.loyaltyReservation.points,
+                type: 'BONUS',
+                description: `Chargeback reconciliation reversal for Order #${order.orderNumber}`,
+              },
+            });
+          }
+        }
+      }, { timeout: 20000, maxWait: 10000 });
+
+      console.error(`[PayHere Webhook] 🚨 Order ${order.orderNumber} received CHARGEBACK (-3). Audit preserved and flagged for reconciliation.`);
+
+      emitOrderStatusUpdated(order.id, order.userId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: PaymentStatus.REFUNDED,
+        updatedAt: new Date(),
+      }, order.branchId);
+
+      return { success: false, status: 'CHARGEBACK', message: 'Chargeback received and flagged for reconciliation' };
+    } else {
+      console.warn(`[PayHere Webhook] ❓ Unknown status code received: ${statusCode} for order ${order.orderNumber}`);
+      return { success: false, status: 'UNKNOWN', message: `Unknown payment status code ${statusCode}` };
     }
   }
 
