@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
+import '../services/socket_service.dart';
 
 class AuthState {
   final UserModel? user;
@@ -49,6 +50,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       final user = await _authService.getCurrentUser();
       state = AuthState(user: user, isAuthenticated: true, isLoading: false);
+      SocketService().connect();
     } catch (_) {
       await _storage.clearTokens();
       state = AuthState(isAuthenticated: false, isLoading: false);
@@ -60,6 +62,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final user = await _authService.login(email: email, password: password);
       state = AuthState(user: user, isAuthenticated: true, isLoading: false);
+      SocketService().connect();
       return true;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -77,6 +80,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         phone: phone,
       );
       state = AuthState(user: user, isAuthenticated: true, isLoading: false);
+      SocketService().connect();
       return true;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -92,6 +96,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    SocketService().disconnect();
     await _authService.logout();
     state = AuthState(isAuthenticated: false, isLoading: false);
   }

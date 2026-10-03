@@ -14,6 +14,7 @@ final orderDetailProvider = FutureProvider.family<OrderModel, String>((ref, id) 
   final service = ref.watch(orderServiceProvider);
   final socket = SocketService();
 
+  await socket.connect();
   socket.joinOrder(id);
   socket.onOrderStatusUpdated((payload) {
     if (payload['orderId'] == id || payload['orderNumber'] == id) {
