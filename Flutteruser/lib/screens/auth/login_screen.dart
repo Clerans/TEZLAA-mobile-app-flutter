@@ -202,6 +202,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   ),
                                 ),
                               ),
+                              if (_error!.toLowerCase().contains('verif') && _emailController.text.trim().isNotEmpty) ...[
+                                TextButton(
+                                  onPressed: () {
+                                    final email = _emailController.text.trim();
+                                    context.push('/verify-account?email=${Uri.encodeComponent(email)}');
+                                  },
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Verify Now',
+                                    style: TextStyle(
+                                      color: Color(0xFFDC2626),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),

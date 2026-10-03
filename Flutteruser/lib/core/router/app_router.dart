@@ -4,6 +4,7 @@ import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/register_screen.dart';
 import '../../screens/auth/forgot_password_screen.dart';
 import '../../screens/auth/verify_otp_screen.dart';
+import '../../screens/auth/verify_account_screen.dart';
 import '../../screens/tabs/main_tab_layout.dart';
 import '../../screens/screens/product_detail_screen.dart';
 import '../../screens/screens/checkout_screen.dart';
@@ -71,6 +72,13 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final email = state.uri.queryParameters['email'] ?? '';
         return VerifyOtpScreen(email: email);
+      },
+    ),
+    GoRoute(
+      path: '/verify-account',
+      builder: (context, state) {
+        final email = state.uri.queryParameters['email'] ?? '';
+        return VerifyAccountScreen(email: email);
       },
     ),
     // Main Tabs

@@ -73,12 +73,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<bool> register(String name, String email, String password, {String? phone}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final user = await _authService.register(
+      await _authService.register(
         name: name,
         email: email,
         password: password,
         phone: phone,
       );
+      // Unverified user is not authenticated until OTP verification
+      state = state.copyWith(isLoading: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
+    }
+  }
+
+  Future<bool> verifyAccount(String email, String otp) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final user = await _authService.verifyOtp(email: email, otp: otp, purpose: 'REGISTER');
       state = AuthState(user: user, isAuthenticated: true, isLoading: false);
       SocketService().connect();
       return true;

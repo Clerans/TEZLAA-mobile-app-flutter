@@ -192,12 +192,13 @@ export class AuthService {
 
     // Purpose verification
     let tokenHash = user.otpCode;
-    if (tokenHash.includes('$')) {
-      const [tokenPurpose, hash] = tokenHash.split('$');
+    const dollarIndex = tokenHash.indexOf('$');
+    if (dollarIndex !== -1) {
+      const tokenPurpose = tokenHash.substring(0, dollarIndex);
       if (tokenPurpose !== purpose) {
         throw ApiError.badRequest(`This code was not issued for ${purpose.toLowerCase()}. Please request a valid code.`);
       }
-      tokenHash = hash;
+      tokenHash = tokenHash.substring(dollarIndex + 1);
     }
 
     const isMatch = await bcryptjs.compare(otp, tokenHash);
@@ -247,12 +248,13 @@ export class AuthService {
     }
 
     let tokenHash = user.otpCode;
-    if (tokenHash.includes('$')) {
-      const [tokenPurpose, hash] = tokenHash.split('$');
+    const dollarIndex = tokenHash.indexOf('$');
+    if (dollarIndex !== -1) {
+      const tokenPurpose = tokenHash.substring(0, dollarIndex);
       if (tokenPurpose !== 'RESET_PASSWORD') {
         throw ApiError.badRequest('This verification code cannot be used for password reset.');
       }
-      tokenHash = hash;
+      tokenHash = tokenHash.substring(dollarIndex + 1);
     }
 
     const isMatch = await bcryptjs.compare(data.otp, tokenHash);

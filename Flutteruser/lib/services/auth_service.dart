@@ -92,10 +92,39 @@ class AuthService {
     });
   }
 
-  Future<void> verifyOtp({required String email, required String otp}) async {
-    await _client.post(ApiEndpoints.verifyOtp, data: {
+  Future<UserModel> verifyOtp({
+    required String email,
+    required String otp,
+    String purpose = 'REGISTER',
+  }) async {
+    final res = await _client.post(ApiEndpoints.verifyOtp, data: {
       'email': email.trim().toLowerCase(),
       'otp': otp.trim(),
+      'purpose': purpose,
+    });
+
+    final data = res.data['data'] ?? res.data;
+    final token = data['token'] ?? data['accessToken'];
+    final refreshToken = data['refreshToken'];
+    final userJson = data['user'] ?? data;
+
+    if (token != null) {
+      await _storage.saveTokens(
+        accessToken: token,
+        refreshToken: refreshToken is String ? refreshToken : null,
+      );
+    }
+
+    return UserModel.fromJson(userJson);
+  }
+
+  Future<void> resendOtp({
+    required String email,
+    String purpose = 'REGISTER',
+  }) async {
+    await _client.post('/auth/resend-otp', data: {
+      'email': email.trim().toLowerCase(),
+      'purpose': purpose,
     });
   }
 

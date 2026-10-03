@@ -78,7 +78,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     setState(() => _loading = false);
 
     if (success) {
-      context.go('/home');
+      context.push('/verify-account?email=${Uri.encodeComponent(email)}');
     } else {
       setState(() {
         _error = ref.read(authProvider).error ?? 'Registration failed. Please try again.';
