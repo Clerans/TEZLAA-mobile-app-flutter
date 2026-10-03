@@ -53,6 +53,7 @@ class _KdsScreenState extends ConsumerState<KdsScreen> {
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(6),
@@ -63,13 +64,16 @@ class _KdsScreenState extends ConsumerState<KdsScreen> {
               child: const Icon(LucideIcons.flame, size: 16, color: Colors.white),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'KDS LIVE TERMINAL',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.0,
+            const Flexible(
+              child: Text(
+                'KDS LIVE TERMINAL',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0,
+                ),
               ),
             ),
           ],
