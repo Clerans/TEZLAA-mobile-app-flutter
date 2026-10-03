@@ -12,6 +12,8 @@ import '../../providers/cart_provider.dart';
 import '../../services/address_service.dart';
 import '../../services/coupon_service.dart';
 import '../../services/order_service.dart';
+import '../../services/payment_service.dart';
+import '../../models/order_model.dart';
 import '../../widgets/tezlaa_button.dart';
 
 final checkoutAddressesProvider = FutureProvider<List<AddressModel>>((ref) async {
@@ -201,7 +203,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       );
 
       // Card / Online Payment: Launch PayHere gateway if params are present
-      if (_paymentMethod == 'CARD' && order.payHereParams != null) {
+      if (_paymentMethod == 'CARD') {
+        if (order.payHereParams == null) {
+          throw Exception('PayHere payment details could not be initialized by the server.');
+        }
+
         final params = order.payHereParams!;
         final checkoutUrl = params['checkout_url']?.toString() ?? 'https://sandbox.payhere.lk/pay/checkout';
         final queryParams = params.map((k, v) => MapEntry(k, v.toString()));
@@ -212,14 +218,52 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         } catch (_) {
           // Fallback if browser cannot open external app
         }
+
+        if (!mounted) return;
+
+        // Show payment verification modal
+        final result = await showModalBottomSheet<String>(
+          context: context,
+          isDismissible: false,
+          enableDrag: false,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (ctx) => _PaymentVerificationSheet(
+            order: order,
+            onRetryLaunch: () async {
+              try {
+                await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+              } catch (_) {}
+            },
+          ),
+        );
+
+        if (!mounted) return;
+
+        if (result == 'COMPLETED') {
+          // Payment confirmed by backend - clear cart and route to tracking
+          ref.read(cartProvider.notifier).clearCart();
+          setState(() => _loading = false);
+          context.pushReplacement('/order-tracking?orderId=${order.id}&orderNumber=${order.orderNumber}');
+        } else if (result == 'PENDING') {
+          // Customer accepted pending authorization - clear cart and route to tracking
+          ref.read(cartProvider.notifier).clearCart();
+          setState(() => _loading = false);
+          context.pushReplacement('/order-tracking?orderId=${order.id}&orderNumber=${order.orderNumber}&pending=true');
+        } else {
+          // Cancelled or Failed - cart is preserved!
+          setState(() {
+            _loading = false;
+            _error = 'Payment was cancelled or unsuccessful. Your cart items are preserved so you can retry or select another payment method.';
+          });
+        }
+      } else {
+        // Cash on delivery: immediate confirmation
+        ref.read(cartProvider.notifier).clearCart();
+        if (!mounted) return;
+        setState(() => _loading = false);
+        context.pushReplacement('/order-tracking?orderId=${order.id}&orderNumber=${order.orderNumber}');
       }
-
-      ref.read(cartProvider.notifier).clearCart();
-
-      if (!mounted) return;
-      setState(() => _loading = false);
-
-      context.pushReplacement('/order-tracking?orderId=${order.id}&orderNumber=${order.orderNumber}');
     } catch (e) {
       if (!mounted) return;
       String errMsg = 'Failed to place order. Please check your connection and details.';
@@ -734,6 +778,266 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PaymentVerificationSheet extends StatefulWidget {
+  final OrderModel order;
+  final VoidCallback onRetryLaunch;
+
+  const _PaymentVerificationSheet({
+    required this.order,
+    required this.onRetryLaunch,
+  });
+
+  @override
+  State<_PaymentVerificationSheet> createState() => _PaymentVerificationSheetState();
+}
+
+class _PaymentVerificationSheetState extends State<_PaymentVerificationSheet> {
+  bool _checking = false;
+  String _status = 'INITIAL'; // INITIAL, PENDING, COMPLETED, FAILED, CANCELLED
+  String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    if (_checking) return;
+    setState(() {
+      _checking = true;
+      _message = null;
+    });
+
+    try {
+      final res = await PaymentService().getPaymentStatus(widget.order.id);
+      final paymentStatus = res['paymentStatus']?.toString() ?? 'PENDING';
+
+      if (!mounted) return;
+
+      if (paymentStatus == 'COMPLETED') {
+        setState(() {
+          _status = 'COMPLETED';
+          _checking = false;
+          _message = 'Payment successfully confirmed!';
+        });
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (mounted) Navigator.of(context).pop('COMPLETED');
+      } else if (paymentStatus == 'CANCELLED') {
+        setState(() {
+          _status = 'CANCELLED';
+          _checking = false;
+          _message = 'Payment was cancelled.';
+        });
+      } else if (paymentStatus == 'FAILED') {
+        setState(() {
+          _status = 'FAILED';
+          _checking = false;
+          _message = 'Payment failed. Please retry or choose another payment method.';
+        });
+      } else {
+        // PENDING
+        setState(() {
+          _status = 'PENDING';
+          _checking = false;
+          _message = 'Payment is awaiting authorization from the gateway.';
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _message = 'Could not verify payment status yet. Please check your network or tap check again.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: AppColors.neutral300,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(LucideIcons.creditCard, color: AppColors.primary),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PayHere Online Payment',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.neutral900),
+                    ),
+                    Text(
+                      'Order #${widget.order.orderNumber} • LKR ${widget.order.grandTotal.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 13, color: AppColors.neutral500),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.neutral50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.neutral200),
+            ),
+            child: Column(
+              children: [
+                if (_checking)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                        SizedBox(width: 12),
+                        Text('Checking payment status...', style: TextStyle(fontSize: 14, color: AppColors.neutral600)),
+                      ],
+                    ),
+                  )
+                else ...[
+                  Icon(
+                    _status == 'COMPLETED'
+                        ? LucideIcons.checkCircle2
+                        : _status == 'PENDING'
+                            ? LucideIcons.clock
+                            : _status == 'CANCELLED' || _status == 'FAILED'
+                                ? LucideIcons.alertCircle
+                                : LucideIcons.externalLink,
+                    size: 32,
+                    color: _status == 'COMPLETED'
+                        ? Colors.green
+                        : _status == 'PENDING'
+                            ? Colors.amber.shade700
+                            : _status == 'CANCELLED' || _status == 'FAILED'
+                                ? Colors.red
+                                : AppColors.primary,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _message ?? 'Please complete payment in the PayHere gateway window.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: AppColors.neutral700, height: 1.4),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (_status == 'PENDING') ...[
+            ElevatedButton(
+              onPressed: _checking ? null : _checkStatus,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Check Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop('PENDING'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Proceed with Pending Authorization', style: TextStyle(fontSize: 14)),
+            ),
+          ] else if (_status == 'CANCELLED' || _status == 'FAILED') ...[
+            ElevatedButton(
+              onPressed: () {
+                widget.onRetryLaunch();
+                _checkStatus();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Retry Gateway Payment', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop('FAILED'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Return to Cart', style: TextStyle(fontSize: 14)),
+            ),
+          ] else ...[
+            ElevatedButton(
+              onPressed: _checking ? null : _checkStatus,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text("I've Completed Payment", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: widget.onRetryLaunch,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Re-open Gateway', style: TextStyle(fontSize: 13)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop('CANCELLED'),
+                    child: const Text('Cancel & Return', style: TextStyle(fontSize: 13, color: AppColors.neutral600)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
