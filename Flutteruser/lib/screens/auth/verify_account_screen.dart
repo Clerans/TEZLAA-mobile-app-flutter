@@ -287,8 +287,8 @@ class _VerifyAccountScreenState extends ConsumerState<VerifyAccountScreen> {
                         ),
                         const SizedBox(height: 24),
                         TezlaaButton(
-                          text: 'Verify & Activate Account',
-                          onPressed: _loading ? null : _handleVerify,
+                          title: 'Verify & Activate Account',
+                          onPress: _loading ? null : _handleVerify,
                           loading: _loading,
                         ),
                       ],
