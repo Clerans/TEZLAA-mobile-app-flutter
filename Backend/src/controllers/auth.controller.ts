@@ -17,12 +17,17 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-  const result = await authService.sendOtp(req.body.email);
+  const result = await authService.sendOtp(req.body.email, 'RESET_PASSWORD');
   return ApiResponse.success(res, result, 'If the account exists, a reset code was sent.');
 });
 
+export const resendOtp = asyncHandler(async (req: Request, res: Response) => {
+  const result = await authService.sendOtp(req.body.email, req.body.purpose || 'REGISTER');
+  return ApiResponse.success(res, result, 'Verification code sent successfully');
+});
+
 export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
-  const result = await authService.verifyOtp(req.body.email, req.body.otp);
+  const result = await authService.verifyOtp(req.body.email, req.body.otp, req.body.purpose || 'REGISTER');
   return ApiResponse.success(res, result, 'Account verified successfully');
 });
 

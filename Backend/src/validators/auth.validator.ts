@@ -30,6 +30,12 @@ export const forgotPasswordSchema = z.object({
 export const verifyOtpSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
   otp: z.string().length(6, 'OTP must be 6 digits'),
+  purpose: z.enum(['REGISTER', 'RESET_PASSWORD']).optional(),
+});
+
+export const resendOtpSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  purpose: z.enum(['REGISTER', 'RESET_PASSWORD']).optional(),
 });
 
 export const resetPasswordSchema = z.object({

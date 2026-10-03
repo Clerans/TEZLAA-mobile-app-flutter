@@ -7,6 +7,7 @@ import {
   loginSchema,
   forgotPasswordSchema,
   verifyOtpSchema,
+  resendOtpSchema,
   resetPasswordSchema,
   refreshTokenSchema,
 } from '../validators/auth.validator.js';
@@ -17,6 +18,7 @@ router.post('/register', validate(registerSchema), authController.register);
 router.post('/login', validate(loginSchema), authController.login);
 router.post('/refresh', validate(refreshTokenSchema), authController.refreshToken);
 router.post('/forgot-password', validate(forgotPasswordSchema), authController.forgotPassword);
+router.post('/resend-otp', validate(resendOtpSchema), authController.resendOtp);
 router.post('/verify-otp', validate(verifyOtpSchema), authController.verifyOtp);
 router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
 

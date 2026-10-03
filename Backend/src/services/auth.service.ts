@@ -65,7 +65,7 @@ export class AuthService {
       phone: data.phone,
       passwordHash,
       isVerified: false,
-      otpCode: hashedOtp,
+      otpCode: `REGISTER$${hashedOtp}`,
       otpExpiresAt,
       otpAttempts: 0,
       otpLastSentAt: new Date(),
@@ -73,7 +73,7 @@ export class AuthService {
 
     if (env.NODE_ENV !== 'production') {
       console.log(`\n========================================`);
-      console.log(`🔑 [AUTH OTP DEV PREVIEW] Code for ${user.email}: ${otpCode}`);
+      console.log(`🔑 [AUTH OTP DEV PREVIEW] (REGISTER) Code for ${user.email}: ${otpCode}`);
       console.log(`========================================\n`);
     }
 
@@ -82,9 +82,8 @@ export class AuthService {
       console.error(`Failed to dispatch registration OTP email to ${user.email}:`, err);
     });
 
-    const tokens = this.generateTokens(user);
-
     return {
+      message: 'Registration successful. A 6-digit verification code has been sent to your email.',
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -92,9 +91,9 @@ export class AuthService {
         phone: user.phone,
         role: user.role,
         branchId: user.branchId,
-        isVerified: user.isVerified,
+        isVerified: false,
       },
-      ...tokens,
+      requiresVerification: true,
       ...(env.NODE_ENV !== 'production' && { otpCode }), // Gated development-only preview
     };
   }
@@ -108,6 +107,10 @@ export class AuthService {
     const isMatch = await bcryptjs.compare(data.password, user.passwordHash);
     if (!isMatch) {
       throw ApiError.unauthorized('Invalid email or password');
+    }
+
+    if (!user.isVerified) {
+      throw ApiError.forbidden('Your account is not verified. Please verify your email before logging in.');
     }
 
     const tokens = this.generateTokens(user);
@@ -128,10 +131,10 @@ export class AuthService {
     };
   }
 
-  async sendOtp(email: string) {
+  async sendOtp(email: string, purpose: 'REGISTER' | 'RESET_PASSWORD' = 'RESET_PASSWORD') {
     const user = await this.userRepo.findByEmail(email.toLowerCase());
     if (!user) {
-      return { message: 'If this email exists, an OTP has been sent.' };
+      return { message: 'If this email exists, a verification code has been sent.' };
     }
 
     // Enforce 60-second resend cooldown
@@ -149,7 +152,7 @@ export class AuthService {
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.userRepo.update(user.id, {
-      otpCode: hashedOtp,
+      otpCode: `${purpose}$${hashedOtp}`,
       otpExpiresAt,
       otpAttempts: 0,
       otpLastSentAt: new Date(),
@@ -157,7 +160,7 @@ export class AuthService {
 
     if (env.NODE_ENV !== 'production') {
       console.log(`\n========================================`);
-      console.log(`🔑 [AUTH OTP DEV PREVIEW] Code for ${email}: ${otpCode}`);
+      console.log(`🔑 [AUTH OTP DEV PREVIEW] (${purpose}) Code for ${email}: ${otpCode}`);
       console.log(`========================================\n`);
     }
 
@@ -172,7 +175,7 @@ export class AuthService {
     };
   }
 
-  async verifyOtp(email: string, otp: string) {
+  async verifyOtp(email: string, otp: string, purpose: 'REGISTER' | 'RESET_PASSWORD' = 'REGISTER') {
     const user = await this.userRepo.findByEmail(email.toLowerCase());
     if (!user || !user.otpCode) {
       throw ApiError.badRequest('Invalid or expired verification code');
@@ -187,7 +190,17 @@ export class AuthService {
       throw ApiError.badRequest('Verification code has expired. Please request a new one.');
     }
 
-    const isMatch = await bcryptjs.compare(otp, user.otpCode);
+    // Purpose verification
+    let tokenHash = user.otpCode;
+    if (tokenHash.includes('$')) {
+      const [tokenPurpose, hash] = tokenHash.split('$');
+      if (tokenPurpose !== purpose) {
+        throw ApiError.badRequest(`This code was not issued for ${purpose.toLowerCase()}. Please request a valid code.`);
+      }
+      tokenHash = hash;
+    }
+
+    const isMatch = await bcryptjs.compare(otp, tokenHash);
     if (!isMatch) {
       await this.userRepo.update(user.id, {
         otpAttempts: user.otpAttempts + 1,
@@ -215,6 +228,7 @@ export class AuthService {
         isVerified: true,
       },
       ...tokens,
+      message: 'Account verified successfully',
     };
   }
 
@@ -232,7 +246,16 @@ export class AuthService {
       throw ApiError.badRequest('Verification code has expired');
     }
 
-    const isMatch = await bcryptjs.compare(data.otp, user.otpCode);
+    let tokenHash = user.otpCode;
+    if (tokenHash.includes('$')) {
+      const [tokenPurpose, hash] = tokenHash.split('$');
+      if (tokenPurpose !== 'RESET_PASSWORD') {
+        throw ApiError.badRequest('This verification code cannot be used for password reset.');
+      }
+      tokenHash = hash;
+    }
+
+    const isMatch = await bcryptjs.compare(data.otp, tokenHash);
     if (!isMatch) {
       await this.userRepo.update(user.id, {
         otpAttempts: user.otpAttempts + 1,
