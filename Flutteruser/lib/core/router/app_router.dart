@@ -18,8 +18,37 @@ import '../../screens/screens/support_screen.dart';
 import '../../screens/screens/legal_screen.dart';
 import '../../screens/screens/branch_screen.dart';
 
+import '../../services/storage_service.dart';
+
 final appRouter = GoRouter(
   initialLocation: '/',
+  redirect: (context, state) async {
+    final token = await StorageService().getAccessToken();
+    final isAuthenticated = token != null && token.isNotEmpty;
+
+    const protectedPrefixes = [
+      '/checkout',
+      '/orders-history',
+      '/order-detail',
+      '/order-tracking',
+      '/addresses',
+      '/edit-profile',
+      '/favorites',
+      '/notifications',
+    ];
+
+    final isProtected = protectedPrefixes.any((p) => state.uri.path.startsWith(p));
+
+    if (!isAuthenticated && isProtected) {
+      return '/login';
+    }
+
+    if (isAuthenticated && (state.uri.path == '/login' || state.uri.path == '/register')) {
+      return '/home';
+    }
+
+    return null;
+  },
   routes: [
     GoRoute(
       path: '/',

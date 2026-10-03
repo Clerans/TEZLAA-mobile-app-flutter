@@ -65,6 +65,9 @@ export class OrderRepository {
         });
 
         if (existingOrder) {
+          if (existingOrder.userId !== input.userId) {
+            throw ApiError.forbidden('This idempotency key belongs to another customer order');
+          }
           return existingOrder;
         }
       }
