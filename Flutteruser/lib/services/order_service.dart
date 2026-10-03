@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../core/constants/api_endpoints.dart';
 import '../models/order_model.dart';
 import 'api_client.dart';
@@ -25,19 +26,29 @@ class OrderService {
     String? deliveryInstructions,
     String? customerNotes,
     String? couponCode,
+    String? rewardId,
+    String? idempotencyKey,
     required String paymentMethod,
     required List<Map<String, dynamic>> items,
   }) async {
-    final res = await _client.post(ApiEndpoints.orders, data: {
-      'orderType': orderType,
-      'branchId': branchId,
-      if (addressId != null) 'addressId': addressId,
-      if (deliveryInstructions != null) 'deliveryInstructions': deliveryInstructions,
-      if (customerNotes != null) 'customerNotes': customerNotes,
-      if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
-      'paymentMethod': paymentMethod,
-      'items': items,
-    });
+    final res = await _client.post(
+      ApiEndpoints.orders,
+      data: {
+        'orderType': orderType,
+        'branchId': branchId,
+        if (addressId != null) 'addressId': addressId,
+        if (deliveryInstructions != null) 'deliveryInstructions': deliveryInstructions,
+        if (customerNotes != null) 'customerNotes': customerNotes,
+        if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
+        if (rewardId != null && rewardId.isNotEmpty) 'rewardId': rewardId,
+        if (idempotencyKey != null && idempotencyKey.isNotEmpty) 'idempotencyKey': idempotencyKey,
+        'paymentMethod': paymentMethod,
+        'items': items,
+      },
+      options: idempotencyKey != null && idempotencyKey.isNotEmpty
+          ? Options(headers: {'Idempotency-Key': idempotencyKey})
+          : null,
+    );
     final data = res.data['data'] ?? res.data;
     return OrderModel.fromJson(data);
   }

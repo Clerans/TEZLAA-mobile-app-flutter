@@ -43,6 +43,33 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
       console.log(`🔔 Automatically joined user room: user:${user.userId}`);
     }
 
+    if (user?.role === 'ADMIN') {
+      socket.join('admin:orders');
+      socket.join('admin');
+      console.log(`👑 Admin socket ${socket.id} joined admin:orders & admin rooms`);
+    } else if (user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
+      socket.join('admin:orders');
+      if (user.branchId) {
+        socket.join(`branch:${user.branchId}`);
+        console.log(`🏢 Staff socket ${socket.id} joined branch room: branch:${user.branchId}`);
+      }
+    }
+
+    const handleJoinKds = (data?: any) => {
+      if (user?.role === 'ADMIN' || user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
+        socket.join('admin:orders');
+        const targetBranch = data?.branchId || user.branchId;
+        if (targetBranch) {
+          socket.join(`branch:${targetBranch}`);
+          console.log(`🍳 Socket ${socket.id} joined KDS branch room: branch:${targetBranch}`);
+        }
+        socket.emit('kds:joined', { success: true });
+      }
+    };
+
+    socket.on('join_kds', handleJoinKds);
+    socket.on('join:kds', handleJoinKds);
+
     const handleJoinOrder = async (data: any) => {
       const targetOrderId = typeof data === 'string' ? data : data?.orderId;
       if (!targetOrderId) return;
@@ -133,7 +160,18 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
 
 export const getIO = (): SocketIOServer | null => ioInstance;
 
-export const emitOrderStatusUpdated = (orderId: string, userId: string, payload: any) => {
+export const emitOrderCreated = (order: any) => {
+  if (!ioInstance) return;
+  ioInstance.to('admin:orders').emit('order:created', order);
+  ioInstance.to('admin:orders').emit('order:new', order);
+  if (order.branchId) {
+    ioInstance.to(`branch:${order.branchId}`).emit('order:created', order);
+    ioInstance.to(`branch:${order.branchId}`).emit('order:new', order);
+  }
+  console.log(`📡 Emitted order:created for ${order.orderNumber || order.id} to admin:orders & branch:${order.branchId}`);
+};
+
+export const emitOrderStatusUpdated = (orderId: string, userId: string, payload: any, branchId?: string) => {
   if (!ioInstance) return;
   // Emit to order room (tracking screen)
   ioInstance.to(`order:${orderId}`).emit('order:status_updated', payload);
@@ -143,7 +181,16 @@ export const emitOrderStatusUpdated = (orderId: string, userId: string, payload:
   ioInstance.to(`user:${userId}`).emit('order:status_updated', payload);
   ioInstance.to(`user:${userId}`).emit('order:status-updated', payload);
   ioInstance.to(`user:${userId}`).emit('order:updated', payload);
-  console.log(`📡 Emitted order status updates to order:${orderId} & user:${userId}`);
+  // Emit to admin & branch KDS rooms
+  ioInstance.to('admin:orders').emit('order:status_updated', payload);
+  ioInstance.to('admin:orders').emit('order:status-updated', payload);
+  ioInstance.to('admin:orders').emit('order:updated', payload);
+  if (branchId) {
+    ioInstance.to(`branch:${branchId}`).emit('order:status_updated', payload);
+    ioInstance.to(`branch:${branchId}`).emit('order:status-updated', payload);
+    ioInstance.to(`branch:${branchId}`).emit('order:updated', payload);
+  }
+  console.log(`📡 Emitted order status updates to order:${orderId}, user:${userId}, admin:orders${branchId ? `, branch:${branchId}` : ''}`);
 };
 
 export const emitNotification = (userId: string, notification: any) => {

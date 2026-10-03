@@ -39,18 +39,13 @@ class AdminOrderService {
   final AdminApiClient _client = AdminApiClient();
 
   Future<List<AdminOrderModel>> getOrders({String? status, String? branchId}) async {
-    try {
-      final response = await _client.dio.get('/admin/orders', queryParameters: {
-        if (status != null && status != 'ALL') 'status': status,
-        if (branchId != null) 'branchId': branchId,
-      });
+    final response = await _client.dio.get('/admin/orders', queryParameters: {
+      if (status != null && status != 'ALL') 'status': status,
+      if (branchId != null) 'branchId': branchId,
+    });
 
-      final items = response.data['data']?['items'] ?? response.data['data'] ?? response.data['orders'] ?? [];
-      return (items as List).map((i) => AdminOrderModel.fromJson(i)).toList();
-    } catch (e) {
-      debugPrint('AdminOrderService.getOrders error: $e');
-      return [];
-    }
+    final items = response.data['data']?['items'] ?? response.data['data'] ?? response.data['orders'] ?? [];
+    return (items as List).map((i) => AdminOrderModel.fromJson(i)).toList();
   }
 
   Future<AdminOrderModel> getOrderById(String orderId) async {

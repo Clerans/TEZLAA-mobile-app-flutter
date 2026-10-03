@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/address_model.dart';
 import '../../providers/app_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/address_service.dart';
+import '../../services/coupon_service.dart';
 import '../../services/order_service.dart';
 import '../../widgets/tezlaa_button.dart';
 
@@ -30,11 +33,118 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _loading = false;
   String? _error;
 
+  // Authoritative Pricing & Coupon state
+  bool _validatingCart = false;
+  Map<String, dynamic>? _serverCartData;
+  List<String> _cartNotices = [];
+  bool _applyingCoupon = false;
+  String? _couponError;
+  late String _idempotencyKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _idempotencyKey = const Uuid().v4();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _validateCartWithServer();
+    });
+  }
+
   @override
   void dispose() {
     _customerNotesController.dispose();
     _couponCodeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _validateCartWithServer() async {
+    final cart = ref.read(cartProvider);
+    final appState = ref.read(appProvider);
+    if (cart.items.isEmpty) return;
+
+    setState(() {
+      _validatingCart = true;
+      _couponError = null;
+    });
+
+    try {
+      final itemsPayload = cart.items.map((i) {
+        return {
+          'productId': i.productId,
+          if (i.variantId != null) 'variantId': i.variantId,
+          if (i.addons.isNotEmpty)
+            'addonIds': i.addons.expand((a) => List.filled(a.quantity, a.id)).toList(),
+          'quantity': i.quantity,
+          'clientUnitPrice': i.lineTotal / (i.quantity > 0 ? i.quantity : 1),
+        };
+      }).toList();
+
+      final result = await OrderService().validateCart(
+        branchId: appState.selectedBranch?.id,
+        orderType: appState.orderType,
+        items: itemsPayload,
+      );
+
+      if (mounted) {
+        setState(() {
+          _serverCartData = result;
+          _cartNotices = List<String>.from(result['notices'] ?? []);
+          _validatingCart = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _validatingCart = false);
+      }
+    }
+  }
+
+  Future<void> _applyCoupon() async {
+    final code = _couponCodeController.text.trim();
+    if (code.isEmpty) {
+      setState(() => _couponError = 'Please enter a coupon code.');
+      return;
+    }
+
+    final cart = ref.read(cartProvider);
+    setState(() {
+      _applyingCoupon = true;
+      _couponError = null;
+    });
+
+    try {
+      final res = await CouponService().validateCoupon(
+        code: code,
+        subtotal: cart.subtotal,
+      );
+
+      final discountAmount = (res['discountAmount'] as num?)?.toDouble() ?? 0.0;
+      ref.read(cartProvider.notifier).applyCoupon(code.toUpperCase(), discountAmount);
+
+      if (mounted) {
+        _couponCodeController.clear();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Coupon $code applied! You saved Rs. ${discountAmount.toStringAsFixed(0)}'),
+            backgroundColor: AppColors.green,
+          ),
+        );
+      }
+      await _validateCartWithServer();
+    } catch (e) {
+      String msg = 'Invalid or expired coupon code.';
+      if (e is DioException && e.response?.data?['message'] != null) {
+        msg = e.response!.data['message'].toString();
+      }
+      setState(() => _couponError = msg);
+    } finally {
+      if (mounted) setState(() => _applyingCoupon = false);
+    }
+  }
+
+  void _removeCoupon() {
+    ref.read(cartProvider.notifier).removeCoupon();
+    _validateCartWithServer();
   }
 
   Future<void> _handlePlaceOrder() async {
@@ -49,16 +159,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
 
     if (appState.selectedBranch == null) {
-      setState(() {
-        _error = 'Please select a branch before placing your order.';
-      });
+      setState(() => _error = 'Please select a branch before placing your order.');
       return;
     }
 
     if (appState.orderType == 'DELIVERY' && _selectedAddress == null) {
-      setState(() {
-        _error = 'Please select or add a delivery address.';
-      });
+      setState(() => _error = 'Please select or add a delivery address.');
       return;
     }
 
@@ -84,13 +190,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         orderType: appState.orderType,
         branchId: branchId,
         addressId: appState.orderType == 'DELIVERY' ? _selectedAddress?.id : null,
+        deliveryInstructions: null,
         customerNotes: _customerNotesController.text.trim().isNotEmpty
             ? _customerNotesController.text.trim()
             : null,
         couponCode: cart.couponCode,
+        idempotencyKey: _idempotencyKey,
         paymentMethod: _paymentMethod,
         items: itemsPayload,
       );
+
+      // Card / Online Payment: Launch PayHere gateway if params are present
+      if (_paymentMethod == 'CARD' && order.payHereParams != null) {
+        final params = order.payHereParams!;
+        final checkoutUrl = params['checkout_url']?.toString() ?? 'https://sandbox.payhere.lk/pay/checkout';
+        final queryParams = params.map((k, v) => MapEntry(k, v.toString()));
+        final launchUri = Uri.parse(checkoutUrl).replace(queryParameters: queryParams);
+
+        try {
+          await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+        } catch (_) {
+          // Fallback if browser cannot open external app
+        }
+      }
 
       ref.read(cartProvider.notifier).clearCart();
 
@@ -119,8 +241,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final cart = ref.watch(cartProvider);
     final appState = ref.watch(appProvider);
     final addressesAsync = ref.watch(checkoutAddressesProvider);
-    final deliveryFee = cart.getDeliveryFee(appState.orderType);
-    final grandTotal = cart.getGrandTotal(appState.orderType);
+
+    final deliveryFee = _serverCartData?['deliveryFee'] != null
+        ? (_serverCartData!['deliveryFee'] as num).toDouble()
+        : cart.getDeliveryFee(appState.orderType);
+
+    final calculatedSubtotal = _serverCartData?['subtotal'] != null
+        ? (_serverCartData!['subtotal'] as num).toDouble()
+        : cart.subtotal;
+
+    final grandTotal = (calculatedSubtotal + deliveryFee - cart.discount).clamp(0.0, double.infinity);
 
     return Scaffold(
       backgroundColor: AppColors.neutral50,
@@ -156,6 +286,38 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                       const SizedBox(height: 14),
                     ],
+                    if (_cartNotices.isNotEmpty) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: _cartNotices
+                              .map((notice) => Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                    child: Row(
+                                      children: [
+                                        const Icon(LucideIcons.info, size: 14, color: Color(0xFFD97706)),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            notice,
+                                            style: const TextStyle(color: Color(0xFF92400E), fontSize: 12, fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ))
+                              .toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     // 1. Order Type (Delivery vs Pickup)
                     Container(
                       decoration: BoxDecoration(
@@ -167,7 +329,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => ref.read(appProvider.notifier).setOrderType('DELIVERY'),
+                              onTap: () {
+                                ref.read(appProvider.notifier).setOrderType('DELIVERY');
+                                _validateCartWithServer();
+                              },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 10),
                                 decoration: BoxDecoration(
@@ -197,7 +362,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => ref.read(appProvider.notifier).setOrderType('PICKUP'),
+                              onTap: () {
+                                ref.read(appProvider.notifier).setOrderType('PICKUP');
+                                _validateCartWithServer();
+                              },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 10),
                                 decoration: BoxDecoration(
@@ -272,8 +440,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               ],
                             );
                           },
-                          loading: () => const CircularProgressIndicator(),
-                          error: (_, __) => const Text('Error loading addresses'),
+                          loading: () => const LinearProgressIndicator(),
+                          error: (_, __) => const Text('Error loading addresses', style: TextStyle(color: AppColors.red)),
                         ),
                       ),
                     ] else ...[
@@ -300,36 +468,125 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    // 3. Payment Method
+                    // 3. Coupon & Promotional Code
                     _buildSectionCard(
-                      title: 'Payment Method',
-                      icon: LucideIcons.creditCard,
-                      child: RadioGroup<String>(
-                        groupValue: _paymentMethod,
-                        onChanged: (val) {
-                          if (val != null) setState(() => _paymentMethod = val);
-                        },
-                        child: Column(
-                          children: [
-                            RadioListTile<String>(
-                              value: 'CASH_ON_DELIVERY',
-                              title: const Text('Cash On Delivery (COD)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                              subtitle: const Text('Pay with cash upon delivery or pickup', style: TextStyle(fontSize: 12, color: AppColors.neutral500)),
-                              contentPadding: EdgeInsets.zero,
+                      title: 'Promo Code & Coupons',
+                      icon: LucideIcons.ticket,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (cart.couponCode != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD1FAE5),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFA7F3D0)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(LucideIcons.tag, size: 16, color: Color(0xFF059669)),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '${cart.couponCode} applied (-Rs. ${cart.discount.toStringAsFixed(0)})',
+                                        style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF065F46), fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                  InkWell(
+                                    onTap: _removeCoupon,
+                                    child: const Icon(LucideIcons.x, size: 16, color: Color(0xFF065F46)),
+                                  ),
+                                ],
+                              ),
                             ),
-                            const Divider(height: 1, color: AppColors.neutral100),
-                            RadioListTile<String>(
-                              value: 'CARD',
-                              title: const Text('Credit / Debit Card (PayHere)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                              subtitle: const Text('Visa, Mastercard, Amex, Genie', style: TextStyle(fontSize: 12, color: AppColors.neutral500)),
-                              contentPadding: EdgeInsets.zero,
+                          ] else ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _couponCodeController,
+                                    textCapitalization: TextCapitalization.characters,
+                                    decoration: InputDecoration(
+                                      hintText: 'Enter coupon code (e.g. TEZLAA20)',
+                                      fillColor: AppColors.neutral100,
+                                      filled: true,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                SizedBox(
+                                  height: 46,
+                                  child: ElevatedButton(
+                                    onPressed: _applyingCoupon ? null : _applyCoupon,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      elevation: 0,
+                                    ),
+                                    child: _applyingCoupon
+                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                        : const Text('Apply', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (_couponError != null) ...[
+                              const SizedBox(height: 6),
+                              Text(_couponError!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
                           ],
-                        ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // 4. Notes & Instructions
+                    // 4. Payment Method
+                    _buildSectionCard(
+                      title: 'Payment Method',
+                      icon: LucideIcons.creditCard,
+                      child: Column(
+                        children: [
+                          // ignore: deprecated_member_use
+                          RadioListTile<String>(
+                            value: 'CASH_ON_DELIVERY',
+                            // ignore: deprecated_member_use
+                            groupValue: _paymentMethod,
+                            // ignore: deprecated_member_use
+                            onChanged: (val) {
+                              if (val != null) setState(() => _paymentMethod = val);
+                            },
+                            title: const Text('Cash On Delivery (COD)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Pay with cash upon delivery or pickup', style: TextStyle(fontSize: 12, color: AppColors.neutral500)),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          const Divider(height: 1, color: AppColors.neutral100),
+                          // ignore: deprecated_member_use
+                          RadioListTile<String>(
+                            value: 'CARD',
+                            // ignore: deprecated_member_use
+                            groupValue: _paymentMethod,
+                            // ignore: deprecated_member_use
+                            onChanged: (val) {
+                              if (val != null) setState(() => _paymentMethod = val);
+                            },
+                            title: const Text('Credit / Debit Card (PayHere Online)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Visa, Mastercard, Amex, Genie sandbox', style: TextStyle(fontSize: 12, color: AppColors.neutral500)),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // 5. Notes & Instructions
                     _buildSectionCard(
                       title: 'Notes & Instructions',
                       icon: LucideIcons.fileText,
@@ -346,17 +603,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // 5. Payment Breakdown
+                    // 6. Payment Breakdown
                     _buildSectionCard(
                       title: 'Payment Breakdown',
                       icon: LucideIcons.receipt,
                       child: Column(
                         children: [
+                          if (_validatingCart)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 4),
+                              child: LinearProgressIndicator(color: AppColors.primary),
+                            ),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text('Subtotal', style: TextStyle(fontSize: 13, color: AppColors.neutral500)),
-                              Text('Rs. ${cart.subtotal.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                              Text('Rs. ${calculatedSubtotal.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -367,6 +629,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               Text(deliveryFee == 0 ? 'FREE' : 'Rs. ${deliveryFee.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                             ],
                           ),
+                          if (cart.discount > 0) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Discount (${cart.couponCode})', style: const TextStyle(fontSize: 13, color: AppColors.green, fontWeight: FontWeight.w600)),
+                                Text('-Rs. ${cart.discount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.green)),
+                              ],
+                            ),
+                          ],
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 10),
                             child: Divider(height: 1, color: AppColors.neutral100),
@@ -401,7 +673,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ],
               ),
               child: TezlaaButton(
-                title: 'Place Order — Rs. ${grandTotal.toStringAsFixed(0)}',
+                title: _paymentMethod == 'CARD'
+                    ? 'Pay with PayHere — Rs. ${grandTotal.toStringAsFixed(0)}'
+                    : 'Place Order — Rs. ${grandTotal.toStringAsFixed(0)}',
                 onPress: _handlePlaceOrder,
                 loading: _loading,
                 size: TezlaaButtonSize.lg,

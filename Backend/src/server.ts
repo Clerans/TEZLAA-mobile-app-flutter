@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './config/database.js';
 import { initSocket } from './sockets/index.js';
+import reservationService from './services/reservation.service.js';
 
 const app = createApp();
 const server = http.createServer(app);
@@ -23,6 +24,14 @@ server.listen(PORT, () => {
   💓 Health Check: http://localhost:${PORT}${env.API_PREFIX}/health
   ======================================================
   `);
+
+  // Start periodic reservation cleanup (runs every 5 minutes)
+  const cleanupTimer = setInterval(() => {
+    reservationService.expireStaleReservations().catch((err) => {
+      console.error('Reservation cleanup error:', err);
+    });
+  }, 5 * 60 * 1000);
+  cleanupTimer.unref();
 });
 
 // Graceful Shutdown

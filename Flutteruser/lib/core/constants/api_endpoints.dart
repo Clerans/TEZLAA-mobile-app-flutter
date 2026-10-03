@@ -30,6 +30,9 @@ class ApiEndpoints {
   static String cancelOrder(String id) => '/orders/$id/cancel';
   static String reorder(String id) => '/orders/$id/reorder';
 
+  // Coupons
+  static const String validateCoupon = '/coupons/validate';
+
   // Addresses
   static const String addresses = '/addresses';
   static String addressDetail(String id) => '/addresses/$id';

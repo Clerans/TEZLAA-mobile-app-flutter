@@ -1,7 +1,7 @@
 import prisma from '../config/database.js';
 import payHereProvider, { PayHereNotificationPayload } from './payhere.provider.js';
 import notificationService from './notification.service.js';
-import { emitOrderStatusUpdated } from '../sockets/index.js';
+import { emitOrderStatusUpdated, emitOrderCreated } from '../sockets/index.js';
 import { ApiError } from '../utils/apiError.js';
 import { PaymentMethod, PaymentStatus, OrderStatus, ReservationStatus } from '@prisma/client';
 
@@ -288,13 +288,14 @@ export class PaymentService {
       );
 
       // Emit Real-Time Order Event via Socket.IO
+      emitOrderCreated(order);
       emitOrderStatusUpdated(order.id, order.userId, {
         orderId: order.id,
         orderNumber: order.orderNumber,
         status: OrderStatus.CONFIRMED,
         paymentStatus: PaymentStatus.COMPLETED,
         updatedAt: new Date(),
-      });
+      }, order.branchId);
 
       return { success: true, status: 'COMPLETED', message: 'Payment successfully completed' };
     } else if (statusCode === '-1') {
@@ -342,7 +343,7 @@ export class PaymentService {
         status: OrderStatus.CANCELLED,
         paymentStatus: PaymentStatus.CANCELLED,
         updatedAt: new Date(),
-      });
+      }, order.branchId);
 
       return { success: false, status: 'CANCELLED', message: 'Payment cancelled by user' };
     } else {
@@ -385,7 +386,7 @@ export class PaymentService {
         status: order.status,
         paymentStatus: PaymentStatus.FAILED,
         updatedAt: new Date(),
-      });
+      }, order.branchId);
 
       return { success: false, status: 'FAILED', message: `Payment failed with status code ${statusCode}` };
     }

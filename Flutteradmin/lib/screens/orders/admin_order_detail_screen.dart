@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -176,8 +177,13 @@ class AdminOrderDetailScreen extends ConsumerWidget {
                       _buildStatusBtn(context, ref, 'CONFIRMED', 'Accept (Confirmed)', AppColors.blue),
                       _buildStatusBtn(context, ref, 'PREPARING', 'In Prep / Brewing', AppColors.amber),
                       _buildStatusBtn(context, ref, 'READY', 'Mark Ready', AppColors.green),
-                      _buildStatusBtn(context, ref, 'OUT_FOR_DELIVERY', 'Dispatched', AppColors.purple),
-                      _buildStatusBtn(context, ref, 'DELIVERED', 'Delivered', AppColors.greenDark),
+                      if (order.orderType == 'DELIVERY') ...[
+                        _buildStatusBtn(context, ref, 'OUT_FOR_DELIVERY', 'Dispatched', AppColors.purple),
+                        _buildStatusBtn(context, ref, 'DELIVERED', 'Delivered', AppColors.greenDark),
+                      ] else ...[
+                        _buildStatusBtn(context, ref, 'READY_FOR_PICKUP', 'Ready for Pickup', AppColors.purple),
+                        _buildStatusBtn(context, ref, 'PICKED_UP', 'Picked Up (Complete)', AppColors.greenDark),
+                      ],
                       _buildStatusBtn(context, ref, 'CANCELLED', 'Cancel Order', AppColors.red),
                     ],
                   ),
@@ -205,7 +211,17 @@ class AdminOrderDetailScreen extends ConsumerWidget {
               SnackBar(content: Text('Order updated to $label'), backgroundColor: AppColors.green),
             );
           }
-        } catch (_) {}
+        } catch (e) {
+          String msg = 'Failed to update order status';
+          if (e is DioException && e.response?.data != null) {
+            msg = e.response?.data['message']?.toString() ?? msg;
+          }
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(msg), backgroundColor: AppColors.red),
+            );
+          }
+        }
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: color.withValues(alpha: 0.12),

@@ -6,7 +6,7 @@ import payHereProvider from './payhere.provider.js';
 import notificationService from './notification.service.js';
 import loyaltyService from './loyalty.service.js';
 import deliveryService from './delivery.service.js';
-import { emitOrderStatusUpdated } from '../sockets/index.js';
+import { emitOrderStatusUpdated, emitOrderCreated } from '../sockets/index.js';
 import { ApiError } from '../utils/apiError.js';
 import { OrderStatus, OrderType, PaymentMethod, PaymentStatus } from '@prisma/client';
 
@@ -43,7 +43,7 @@ export interface PlaceOrderDTO {
 }
 
 // Order Status State Machine Transition Rules
-const VALID_DELIVERY_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+export const VALID_DELIVERY_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
   CONFIRMED: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
   PREPARING: [OrderStatus.READY, OrderStatus.OUT_FOR_DELIVERY],
@@ -55,7 +55,7 @@ const VALID_DELIVERY_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [],
 };
 
-const VALID_PICKUP_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+export const VALID_PICKUP_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
   CONFIRMED: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
   PREPARING: [OrderStatus.READY, OrderStatus.READY_FOR_PICKUP],
@@ -348,12 +348,13 @@ export class OrderService {
         order.id
       );
 
+      emitOrderCreated(order);
       emitOrderStatusUpdated(order.id, dto.userId, {
         orderId: order.id,
         orderNumber: order.orderNumber,
         status: order.status,
         updatedAt: order.updatedAt,
-      });
+      }, order.branchId);
     }
 
     // 9. If Online Payment, generate PayHere Signed Checkout Payload
@@ -467,7 +468,7 @@ export class OrderService {
       orderNumber: order.orderNumber,
       status: newStatus,
       updatedAt: updatedOrder.updatedAt,
-    });
+    }, order.branchId);
 
     return updatedOrder;
   }
@@ -497,7 +498,7 @@ export class OrderService {
       orderNumber: order.orderNumber,
       status: OrderStatus.CANCELLED,
       updatedAt: updated.updatedAt,
-    });
+    }, order.branchId);
 
     return updated;
   }

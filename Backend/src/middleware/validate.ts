@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AnyZodObject, ZodError, z } from 'zod';
 import { ApiError } from '../utils/apiError.js';
 
-export const validate = (schema: AnyZodObject) => {
+export const validate = (schema: z.ZodTypeAny) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const shape = schema instanceof z.ZodObject ? schema.shape : null;

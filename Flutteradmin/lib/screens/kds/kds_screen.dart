@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -29,10 +30,14 @@ class _KdsScreenState extends ConsumerState<KdsScreen> {
           ),
         );
       }
-    } catch (_) {
+    } catch (e) {
+      String msg = 'Failed to update status';
+      if (e is DioException && e.response?.data != null) {
+        msg = e.response?.data['message']?.toString() ?? msg;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update status'), backgroundColor: AppColors.red),
+          SnackBar(content: Text(msg), backgroundColor: AppColors.red),
         );
       }
     }
@@ -136,7 +141,36 @@ class _KdsScreenState extends ConsumerState<KdsScreen> {
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                error: (_, __) => const Center(child: Text('KDS connection error', style: TextStyle(color: Colors.white))),
+                error: (err, __) => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(LucideIcons.alertTriangle, size: 48, color: AppColors.amber),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'KDS Connection Interrupted',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        err.toString().contains('429')
+                            ? 'Rate limit exceeded. Automatic reconnect in progress...'
+                            : 'Unable to reach TEZLAA Cloud. Reconnecting...',
+                        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: () => ref.invalidate(kdsOrdersProvider),
+                        icon: const Icon(LucideIcons.refreshCw, size: 16),
+                        label: const Text('Retry Connection'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -187,18 +221,30 @@ class _KdsScreenState extends ConsumerState<KdsScreen> {
         break;
       case 'PREPARING':
         headerBg = const Color(0xFFEA580C); // Orange
-        actionTitle = 'Mark Order Ready';
+        actionTitle = order.orderType == 'PICKUP' ? 'Mark Ready for Pickup' : 'Mark Order Ready';
         nextStatus = 'READY';
         break;
       case 'READY':
         headerBg = const Color(0xFF16A34A); // Green
-        actionTitle = order.orderType == 'DELIVERY' ? 'Hand to Courier / Dispatch' : 'Complete Order';
-        nextStatus = order.orderType == 'DELIVERY' ? 'OUT_FOR_DELIVERY' : 'DELIVERED';
+        actionTitle = order.orderType == 'DELIVERY'
+            ? 'Hand to Courier / Dispatch'
+            : 'Customer Picked Up';
+        nextStatus = order.orderType == 'DELIVERY' ? 'OUT_FOR_DELIVERY' : 'PICKED_UP';
+        break;
+      case 'READY_FOR_PICKUP':
+        headerBg = const Color(0xFF059669); // Emerald
+        actionTitle = 'Complete Handover (Picked Up)';
+        nextStatus = 'PICKED_UP';
+        break;
+      case 'OUT_FOR_DELIVERY':
+        headerBg = const Color(0xFF7C3AED); // Purple
+        actionTitle = 'Mark Order Delivered';
+        nextStatus = 'DELIVERED';
         break;
       default:
         headerBg = const Color(0xFF475569);
-        actionTitle = 'Complete';
-        nextStatus = 'DELIVERED';
+        actionTitle = order.orderType == 'DELIVERY' ? 'Complete Delivery' : 'Complete Pickup';
+        nextStatus = order.orderType == 'DELIVERY' ? 'DELIVERED' : 'PICKED_UP';
         break;
     }
 

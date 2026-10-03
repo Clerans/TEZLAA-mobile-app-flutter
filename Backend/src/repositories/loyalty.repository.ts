@@ -35,6 +35,7 @@ export class LoyaltyRepository {
       where: {
         userId,
         status: ReservationStatus.RESERVED,
+        expiresAt: { gt: new Date() },
       },
       select: { points: true },
     });

@@ -19,6 +19,7 @@ export class CouponRepository {
       where: {
         couponId,
         status: ReservationStatus.RESERVED,
+        expiresAt: { gt: new Date() },
       },
     });
   }

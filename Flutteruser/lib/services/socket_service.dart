@@ -20,6 +20,8 @@ class SocketService {
       io.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
+          .setAuth({'token': token ?? ''})
+          .setQuery({'token': token ?? ''})
           .setExtraHeaders(token != null ? {'Authorization': 'Bearer $token'} : {})
           .build(),
     );

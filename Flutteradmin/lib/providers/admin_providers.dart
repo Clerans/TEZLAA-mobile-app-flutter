@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/admin_models.dart';
 import '../services/admin_services.dart';
+import '../services/admin_socket_service.dart';
 import '../services/storage_service.dart';
 
 class AdminAuthState {
@@ -93,25 +96,62 @@ final adminAuthProvider = StateNotifierProvider<AdminAuthNotifier, AdminAuthStat
   return AdminAuthNotifier();
 });
 
-// KDS Orders Provider (Auto-refresh every 5 seconds)
+// KDS Orders Provider (Real-Time Socket-Driven with 25s Heartbeat Fallback)
 final kdsOrdersProvider = StreamProvider.autoDispose<List<AdminOrderModel>>((ref) async* {
   final orderService = AdminOrderService();
-  while (true) {
-    try {
-      final orders = await orderService.getOrders();
-      // Only active kitchen statuses: PENDING, CONFIRMED, PREPARING, READY
-      final active = orders.where((o) =>
-          o.status == 'PENDING' ||
-          o.status == 'CONFIRMED' ||
-          o.status == 'PREPARING' ||
-          o.status == 'READY' ||
-          o.status == 'OUT_FOR_DELIVERY').toList();
-      yield active;
-    } catch (_) {
-      yield [];
-    }
-    await Future.delayed(const Duration(seconds: 4));
+  final socketService = AdminSocketService();
+  await socketService.connect();
+
+  List<AdminOrderModel> lastOrders = [];
+
+  Future<List<AdminOrderModel>> fetchActive() async {
+    final orders = await orderService.getOrders();
+    return orders.where((o) =>
+        o.status == 'PENDING' ||
+        o.status == 'CONFIRMED' ||
+        o.status == 'PREPARING' ||
+        o.status == 'READY' ||
+        o.status == 'READY_FOR_PICKUP' ||
+        o.status == 'OUT_FOR_DELIVERY').toList();
   }
+
+  // 1. Initial fetch
+  try {
+    lastOrders = await fetchActive();
+    yield lastOrders;
+  } catch (err) {
+    debugPrint('Initial KDS fetch error: $err');
+    rethrow;
+  }
+
+  // 2. Set up event stream listener + periodic heartbeat (25s fallback)
+  final controller = StreamController<List<AdminOrderModel>>();
+
+  final sub = socketService.orderEvents.listen((_) async {
+    try {
+      lastOrders = await fetchActive();
+      if (!controller.isClosed) controller.add(lastOrders);
+    } catch (e) {
+      debugPrint('KDS real-time update error: $e');
+    }
+  });
+
+  final timer = Timer.periodic(const Duration(seconds: 25), (_) async {
+    try {
+      lastOrders = await fetchActive();
+      if (!controller.isClosed) controller.add(lastOrders);
+    } catch (e) {
+      debugPrint('KDS periodic heartbeat error: $e');
+    }
+  });
+
+  ref.onDispose(() {
+    sub.cancel();
+    timer.cancel();
+    controller.close();
+  });
+
+  yield* controller.stream;
 });
 
 // All Orders Provider with Status Filter
