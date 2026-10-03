@@ -238,7 +238,18 @@ class OrderDetailScreen extends ConsumerWidget {
                               try {
                                 await OrderService().cancelOrder(order.id);
                                 ref.invalidate(orderDetailProvider(order.id));
-                              } catch (_) {}
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Order cancelled successfully'), backgroundColor: AppColors.green),
+                                  );
+                                }
+                              } catch (_) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Unable to cancel order at this stage'), backgroundColor: AppColors.red),
+                                  );
+                                }
+                              }
                             }
                           },
                           child: const Padding(

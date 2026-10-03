@@ -84,7 +84,13 @@ class _AddressesScreenState extends ConsumerState<AddressesScreen> {
                   if (ctx.mounted) {
                     Navigator.pop(ctx);
                   }
-                } catch (_) {}
+                } catch (_) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Failed to save address. Please check your input.'), backgroundColor: AppColors.red),
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -203,7 +209,13 @@ class _AddressesScreenState extends ConsumerState<AddressesScreen> {
                           try {
                             await AddressService().deleteAddress(addr.id);
                             ref.invalidate(addressesListProvider);
-                          } catch (_) {}
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Failed to delete address'), backgroundColor: AppColors.red),
+                              );
+                            }
+                          }
                         },
                       ),
                     ],

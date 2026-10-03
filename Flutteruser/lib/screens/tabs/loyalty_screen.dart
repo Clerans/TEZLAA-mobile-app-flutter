@@ -248,7 +248,16 @@ class LoyaltyScreen extends ConsumerWidget {
                                       ),
                                     );
                                   }
-                                } catch (_) {}
+                                } catch (_) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Unable to redeem reward. Please check your points balance.'),
+                                        backgroundColor: AppColors.red,
+                                      ),
+                                    );
+                                  }
+                                }
                               },
                             ),
                           ],

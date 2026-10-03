@@ -29,7 +29,13 @@ class _AdminMenuScreenState extends ConsumerState<AdminMenuScreen> {
     try {
       await AdminProductService().toggleAvailability(productId, !currentVal);
       ref.invalidate(adminProductsProvider);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update product availability'), backgroundColor: AppColors.red),
+        );
+      }
+    }
   }
 
   void _showAddItemDialog() {
