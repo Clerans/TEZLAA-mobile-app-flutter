@@ -150,7 +150,51 @@ class AdminAnalyticsScreen extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-          error: (_, __) => const Center(child: Text('Failed to load analytics')),
+          error: (err, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFFCA5A5)),
+                    ),
+                    child: const Icon(LucideIcons.alertTriangle, color: Color(0xFFDC2626), size: 28),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Unable to Load Analytics',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    err.toString().contains('SocketException') || err.toString().contains('connection')
+                        ? 'Could not connect to the backend server. Please verify your internet connection.'
+                        : 'An unexpected error occurred while fetching live analytics.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: () => ref.invalidate(adminAnalyticsProvider),
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

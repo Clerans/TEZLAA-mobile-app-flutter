@@ -89,7 +89,7 @@ class AdminProductService {
         return items.map((i) => AdminProductModel.fromJson(i as Map<String, dynamic>)).toList();
       } catch (e2) {
         debugPrint('AdminProductService.getProducts catalog fallback error: $e2');
-        return [];
+        rethrow;
       }
     }
   }
@@ -101,6 +101,7 @@ class AdminProductService {
       });
     } catch (e) {
       debugPrint('toggleAvailability error: $e');
+      rethrow;
     }
   }
 
@@ -123,13 +124,15 @@ class AdminCategoryService {
       final List items = data is List ? data : (data['items'] as List? ?? []);
       return items.map((i) => AdminCategoryModel.fromJson(i as Map<String, dynamic>)).toList();
     } catch (e) {
+      debugPrint('AdminCategoryService.getCategories admin fallback: $e');
       try {
         final fallback = await _client.dio.get('/categories');
         final data = fallback.data['data'] ?? fallback.data;
         final List items = data is List ? data : (data['items'] as List? ?? []);
         return items.map((i) => AdminCategoryModel.fromJson(i as Map<String, dynamic>)).toList();
-      } catch (_) {
-        return [];
+      } catch (e2) {
+        debugPrint('AdminCategoryService.getCategories error: $e2');
+        rethrow;
       }
     }
   }
@@ -148,7 +151,7 @@ class AdminCustomerService {
       return items.map((i) => AdminCustomerModel.fromJson(i as Map<String, dynamic>)).toList();
     } catch (e) {
       debugPrint('AdminCustomerService.getCustomers error: $e');
-      return [];
+      rethrow;
     }
   }
 }
@@ -163,13 +166,7 @@ class AdminAnalyticsService {
       return AdminAnalyticsSummary.fromJson(data);
     } catch (e) {
       debugPrint('AdminAnalyticsService.getSummary error: $e');
-      return AdminAnalyticsSummary(
-        totalRevenue: 0.0,
-        totalOrders: 0,
-        activeOrders: 0,
-        completedOrders: 0,
-        averageOrderValue: 0.0,
-      );
+      rethrow;
     }
   }
 }
