@@ -54,6 +54,7 @@ describe('PayHere Status Code State Machine (2, 0, -1, -2, -3)', () => {
     );
 
     jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(mockOrder as any);
+    jest.spyOn(notificationService, 'createOrderStatusNotification').mockResolvedValue({} as any);
     const mockTx = {
       payment: { update: jest.fn().mockResolvedValue({}) },
       order: { update: jest.fn().mockResolvedValue({}) },
