@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tezlaa_admin_flutter/models/admin_models.dart';
@@ -18,7 +17,8 @@ void main() {
 
   group('Admin Responsive Viewport Validation', () {
     for (final entry in viewports.entries) {
-      testWidgets('KdsScreen renders without overflow on ${entry.key}', (tester) async {
+      testWidgets('KdsScreen renders without overflow on ${entry.key}',
+          (tester) async {
         tester.view.physicalSize = entry.value;
         tester.view.devicePixelRatio = 1.0;
         addTearDown(() {
@@ -29,7 +29,8 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              kdsOrdersProvider.overrideWith((ref) => Stream.value(<AdminOrderModel>[])),
+              kdsOrdersProvider
+                  .overrideWith((ref) => Stream.value(<AdminOrderModel>[])),
             ],
             child: const MaterialApp(
               home: KdsScreen(),
