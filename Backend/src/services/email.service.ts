@@ -1,34 +1,6 @@
-import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 
 export class EmailService {
-  private transporter: nodemailer.Transporter | null = null;
-
-  constructor() {
-    if (env.SMTP_USER && env.SMTP_PASS && env.SMTP_PASS !== 'mock_pass') {
-      const cleanPass = env.SMTP_PASS.replace(/\s+/g, '');
-      if (env.SMTP_HOST?.includes('gmail') || env.SMTP_USER.includes('@gmail.com')) {
-        this.transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: env.SMTP_USER,
-            pass: cleanPass,
-          },
-        });
-      } else if (env.SMTP_HOST) {
-        this.transporter = nodemailer.createTransport({
-          host: env.SMTP_HOST,
-          port: Number(env.SMTP_PORT) || 587,
-          secure: Number(env.SMTP_PORT) === 465,
-          auth: {
-            user: env.SMTP_USER,
-            pass: cleanPass,
-          },
-        });
-      }
-    }
-  }
-
   async sendOtpEmail(to: string, otp: string): Promise<boolean> {
     const htmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 500px; margin: auto; padding: 24px; border: 1px solid #E5E7EB; border-radius: 12px;">
@@ -45,13 +17,11 @@ export class EmailService {
       </div>
     `;
 
-    // 1. Prioritize Brevo HTTPS API (Works seamlessly on Render where SMTP ports are blocked)
+    // 1. Send via Brevo HTTPS API
     if (env.BREVO_API_KEY) {
       try {
-        const senderMatch = env.EMAIL_FROM.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/);
-        const rawSenderName = env.BREVO_SENDER_NAME || senderMatch?.[1] || 'TEZLAA Artisan Café';
-        const senderName = rawSenderName.replace(/<[^>]+>/g, '').trim() || 'TEZLAA Artisan Café';
-        const senderEmail = env.BREVO_SENDER_EMAIL || senderMatch?.[2] || 'cleranspc@gmail.com';
+        const senderName = env.BREVO_SENDER_NAME.replace(/<[^>]+>/g, '').trim() || 'TEZLAA Artisan Café';
+        const senderEmail = env.BREVO_SENDER_EMAIL || 'cleranspc@gmail.com';
 
         const res = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
@@ -75,30 +45,15 @@ export class EmailService {
         } else {
           const errText = await res.text();
           console.error(`❌ Brevo API error (${res.status}):`, errText);
+          return false;
         }
       } catch (err) {
         console.error('❌ Failed to send email via Brevo API:', err);
-      }
-    }
-
-    // 2. Fallback to Nodemailer SMTP
-    if (this.transporter) {
-      try {
-        const info = await this.transporter.sendMail({
-          from: env.EMAIL_FROM,
-          to,
-          subject: 'Your TEZLAA Verification Code',
-          html: htmlContent,
-        });
-        console.log(`📧 [SMTP DELIVERED] Real OTP sent to ${to} | MessageId: ${info.messageId}`);
-        return true;
-      } catch (error) {
-        console.error('❌ Failed to send email via SMTP:', error);
         return false;
       }
     }
 
-    // 3. Fallback to mock log
+    // 2. Fallback to mock log when no API key configured
     console.log(`✉️  [MOCK EMAIL] To: ${to} | Subject: TEZLAA Verification Code | OTP: ${otp}`);
     return true;
   }
