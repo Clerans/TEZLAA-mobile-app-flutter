@@ -49,8 +49,9 @@ export class EmailService {
     if (env.BREVO_API_KEY) {
       try {
         const senderMatch = env.EMAIL_FROM.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/);
-        const senderName = senderMatch?.[1] || 'TEZLAA Artisan Café';
-        const senderEmail = senderMatch?.[2] || 'cleranspc@gmail.com';
+        const rawSenderName = env.BREVO_SENDER_NAME || senderMatch?.[1] || 'TEZLAA Artisan Café';
+        const senderName = rawSenderName.replace(/<[^>]+>/g, '').trim() || 'TEZLAA Artisan Café';
+        const senderEmail = env.BREVO_SENDER_EMAIL || senderMatch?.[2] || 'cleranspc@gmail.com';
 
         const res = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
