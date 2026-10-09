@@ -1,0 +1,172 @@
+import '../core/constants/api_endpoints.dart';
+import '../models/user_model.dart';
+import 'api_client.dart';
+import 'storage_service.dart';
+
+class AuthService {
+  final ApiClient _client = ApiClient();
+  final StorageService _storage = StorageService();
+
+  Future<UserModel> login({required String email, required String password}) async {
+    final res = await _client.post(ApiEndpoints.login, data: {
+      'email': email.trim().toLowerCase(),
+      'password': password,
+    });
+
+    final data = res.data['data'] ?? res.data;
+    final token = data['token'] ?? data['accessToken'];
+    final refreshToken = data['refreshToken'];
+    final userJson = data['user'] ?? data;
+
+    if (token != null) {
+      await _storage.saveTokens(
+        accessToken: token,
+        refreshToken: refreshToken is String ? refreshToken : null,
+      );
+    }
+
+    return UserModel.fromJson(userJson);
+  }
+
+  Future<UserModel> register({
+    required String name,
+    required String email,
+    required String password,
+    String? phone,
+  }) async {
+    final res = await _client.post(ApiEndpoints.register, data: {
+      'fullName': name.trim(),
+      'name': name.trim(),
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      if (phone != null && phone.isNotEmpty) 'phone': phone.trim(),
+    });
+
+    final data = res.data['data'] ?? res.data;
+    final token = data['token'] ?? data['accessToken'];
+    final refreshToken = data['refreshToken'];
+    final userJson = data['user'] ?? data;
+
+    if (token != null) {
+      await _storage.saveTokens(
+        accessToken: token,
+        refreshToken: refreshToken is String ? refreshToken : null,
+      );
+    }
+
+    return UserModel.fromJson(userJson);
+  }
+
+  Future<bool> refreshTokens() async {
+    try {
+      final currentRefresh = await _storage.getRefreshToken();
+      if (currentRefresh == null || currentRefresh.isEmpty) {
+        return false;
+      }
+
+      final res = await _client.dio.post(ApiEndpoints.refreshToken, data: {
+        'refreshToken': currentRefresh,
+      });
+
+      final data = res.data['data'] ?? res.data;
+      final newAccessToken = data['accessToken'] ?? data['token'];
+      final newRefreshToken = data['refreshToken'] ?? currentRefresh;
+
+      if (newAccessToken != null) {
+        await _storage.saveTokens(
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken is String ? newRefreshToken : null,
+        );
+        return true;
+      }
+      return false;
+    } catch (_) {
+      await _storage.clearTokens();
+      return false;
+    }
+  }
+
+  Future<void> forgotPassword(String email) async {
+    await _client.post(ApiEndpoints.forgotPassword, data: {
+      'email': email.trim().toLowerCase(),
+    });
+  }
+
+  Future<UserModel> verifyOtp({
+    required String email,
+    required String otp,
+    String purpose = 'REGISTER',
+  }) async {
+    final res = await _client.post(ApiEndpoints.verifyOtp, data: {
+      'email': email.trim().toLowerCase(),
+      'otp': otp.trim(),
+      'purpose': purpose,
+    });
+
+    final data = res.data['data'] ?? res.data;
+    final token = data['token'] ?? data['accessToken'];
+    final refreshToken = data['refreshToken'];
+    final userJson = data['user'] ?? data;
+
+    if (token != null) {
+      await _storage.saveTokens(
+        accessToken: token,
+        refreshToken: refreshToken is String ? refreshToken : null,
+      );
+    }
+
+    return UserModel.fromJson(userJson);
+  }
+
+  Future<void> resendOtp({
+    required String email,
+    String purpose = 'REGISTER',
+  }) async {
+    await _client.post('/auth/resend-otp', data: {
+      'email': email.trim().toLowerCase(),
+      'purpose': purpose,
+    });
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    await _client.post(ApiEndpoints.resetPassword, data: {
+      'email': email.trim().toLowerCase(),
+      'otp': otp.trim(),
+      'password': newPassword,
+    });
+  }
+
+  Future<UserModel> getCurrentUser() async {
+    final res = await _client.get(ApiEndpoints.me);
+    final data = res.data['data'] ?? res.data;
+    return UserModel.fromJson(data);
+  }
+
+  Future<UserModel> updateProfile({String? name, String? phone}) async {
+    final res = await _client.put(ApiEndpoints.updateProfile, data: {
+      if (name != null) 'name': name.trim(),
+      if (name != null) 'fullName': name.trim(),
+      if (phone != null) 'phone': phone.trim(),
+    });
+    final data = res.data['data'] ?? res.data;
+    return UserModel.fromJson(data);
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _client.post(ApiEndpoints.changePassword, data: {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    });
+  }
+
+  Future<void> logout() async {
+    await _storage.clearTokens();
+  }
+}
