@@ -106,7 +106,7 @@ class AdminSettingsScreen extends ConsumerWidget {
                         value: true,
                         onChanged: (val) {},
                         title: const Text('Auto-Sync Cloud WebSockets', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                        subtitle: const Text('Real-time synchronization with Railway backend', style: TextStyle(fontSize: 12, color: AppColors.neutral500)),
+                        subtitle: const Text('Real-time synchronization with cloud backend', style: TextStyle(fontSize: 12, color: AppColors.neutral500)),
                         activeTrackColor: AppColors.primary,
                       ),
                     ],
