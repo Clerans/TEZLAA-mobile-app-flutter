@@ -143,7 +143,8 @@ describe('CORS Origin Validation & Administrative Negative Authorization Tests',
         grandTotal: 2500,
       } as any);
 
-      await adminController.getOrderById(req, res, next);
+      adminController.getOrderById(req, res, next);
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(next).toHaveBeenCalledWith(expect.any(ApiError));
       const error = (next.mock.calls[0] as any)[0] as ApiError;
@@ -171,7 +172,8 @@ describe('CORS Origin Validation & Administrative Negative Authorization Tests',
         grandTotal: 1500,
       } as any);
 
-      await adminController.getOrderById(req, res, next);
+      adminController.getOrderById(req, res, next);
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
