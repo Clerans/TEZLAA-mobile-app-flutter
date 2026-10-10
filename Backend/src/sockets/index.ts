@@ -29,56 +29,7 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
   });
 
   // Strict Socket Authentication Middleware with Database Verification
-  io.use(async (socket: Socket, next) => {
-    const token =
-      socket.handshake.auth?.token ||
-      socket.handshake.headers?.authorization?.split(' ')[1] ||
-      (socket.handshake.query?.token as string);
-
-    if (!token) {
-      return next(new Error('Authentication error: Token required'));
-    }
-
-    try {
-      const decoded = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
-      if (!decoded?.userId) {
-        return next(new Error('Authentication error: Invalid token payload'));
-      }
-
-      // Authoritative database verification: protect against stale JWT claims, revoked accounts, or reassigned roles/branches
-      const dbUser = await prisma.user.findUnique({
-        where: { id: decoded.userId },
-        select: {
-          id: true,
-          email: true,
-          role: true,
-          branchId: true,
-          isVerified: true,
-        },
-      });
-
-      if (!dbUser) {
-        return next(new Error('Authentication error: User account not found or deactivated'));
-      }
-
-      if (!dbUser.isVerified) {
-        return next(new Error('Authentication error: User account not verified'));
-      }
-
-      // Attach fresh, authoritative DB identity to socket session
-      (socket as any).user = {
-        userId: dbUser.id,
-        email: dbUser.email,
-        role: dbUser.role,
-        branchId: dbUser.branchId,
-      };
-
-      return next();
-    } catch (err: any) {
-      console.warn(`Socket auth token invalid for socket ${socket.id}: ${err?.message || err}`);
-      return next(new Error('Authentication error: Invalid or expired token'));
-    }
-  });
+  io.use(socketAuthMiddleware);
 
   io.on('connection', (socket: Socket) => {
     const user = (socket as any).user as AuthPayload | undefined;
