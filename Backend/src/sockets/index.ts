@@ -8,46 +8,97 @@ import { AuthPayload } from '../types/index.js';
 let ioInstance: SocketIOServer | null = null;
 
 export const initSocket = (httpServer: HttpServer): SocketIOServer => {
+  const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
+
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*',
+      origin: (origin, callback) => {
+        // Allow native Flutter apps and server-side connections with no origin header
+        if (!origin) return callback(null, true);
+        if (env.NODE_ENV !== 'production' && env.CORS_ORIGIN === '*') {
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error(`CORS origin '${origin}' not permitted`));
+      },
+      credentials: true,
       methods: ['GET', 'POST'],
     },
   });
 
-  // Socket Authentication Middleware
-  io.use((socket: Socket, next) => {
+  // Strict Socket Authentication Middleware with Database Verification
+  io.use(async (socket: Socket, next) => {
     const token =
       socket.handshake.auth?.token ||
       socket.handshake.headers?.authorization?.split(' ')[1] ||
       (socket.handshake.query?.token as string);
 
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
-        (socket as any).user = decoded;
-      } catch (err: any) {
-        console.warn(`Socket auth token invalid for socket ${socket.id}: ${err?.message || err}`);
-        return next(new Error('Authentication error: Invalid or expired token'));
-      }
+    if (!token) {
+      return next(new Error('Authentication error: Token required'));
     }
-    next();
+
+    try {
+      const decoded = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
+      if (!decoded?.userId) {
+        return next(new Error('Authentication error: Invalid token payload'));
+      }
+
+      // Authoritative database verification: protect against stale JWT claims, revoked accounts, or reassigned roles/branches
+      const dbUser = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          branchId: true,
+          isVerified: true,
+        },
+      });
+
+      if (!dbUser) {
+        return next(new Error('Authentication error: User account not found or deactivated'));
+      }
+
+      if (!dbUser.isVerified) {
+        return next(new Error('Authentication error: User account not verified'));
+      }
+
+      // Attach fresh, authoritative DB identity to socket session
+      (socket as any).user = {
+        userId: dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role,
+        branchId: dbUser.branchId,
+      };
+
+      return next();
+    } catch (err: any) {
+      console.warn(`Socket auth token invalid for socket ${socket.id}: ${err?.message || err}`);
+      return next(new Error('Authentication error: Invalid or expired token'));
+    }
   });
 
   io.on('connection', (socket: Socket) => {
     const user = (socket as any).user as AuthPayload | undefined;
-    console.log(`🔌 WebSocket connection established: ${socket.id}${user ? ` (User: ${user.userId})` : ''}`);
-
-    if (user?.userId) {
-      socket.join(`user:${user.userId}`);
-      console.log(`🔔 Automatically joined user room: user:${user.userId}`);
+    if (!user) {
+      socket.disconnect(true);
+      return;
     }
 
-    if (user?.role === 'ADMIN') {
+    console.log(`🔌 WebSocket connection established: ${socket.id} (User: ${user.userId}, Role: ${user.role})`);
+
+    // Automatically join customer private notification room
+    socket.join(`user:${user.userId}`);
+    console.log(`🔔 Automatically joined user room: user:${user.userId}`);
+
+    // Join authorized staff rooms based on fresh DB role & branch
+    if (user.role === 'ADMIN') {
       socket.join('admin:orders');
       socket.join('admin');
       console.log(`👑 Admin socket ${socket.id} joined admin:orders & admin rooms`);
-    } else if (user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
+    } else if (user.role === 'BRANCH_STAFF' || user.role === 'BRANCH_MANAGER') {
       if (user.branchId) {
         socket.join(`branch:${user.branchId}`);
         console.log(`🏢 Staff socket ${socket.id} joined branch room: branch:${user.branchId}`);

@@ -162,24 +162,47 @@ export class PaymentService {
       throw new ApiError(400, 'Invalid currency');
     }
 
-    // 4. Idempotency Check:
-    // If this payment_id has already been processed or order is already COMPLETED/PAID, return idempotent success
-    const existingPaymentForTxn = order.payments.find(
-      (p) => p.transactionId === payload.payment_id && p.status === PaymentStatus.COMPLETED
-    );
-    if (existingPaymentForTxn || (order.payments.some((p) => p.status === PaymentStatus.COMPLETED) && payload.status_code === '2')) {
-      console.log(`[PayHere Webhook] ℹ️ Payment ${payload.payment_id} for order ${order.orderNumber} is already completed. Skipping duplicates.`);
-      return { success: true, status: 'COMPLETED', message: 'Payment already processed', duplicate: true, idempotent: true };
+    // 4. Idempotency & Terminal State Checks:
+    const hasCompletedPayment = order.payments.some((p) => p.status === PaymentStatus.COMPLETED);
+
+    // If order already has a COMPLETED payment:
+    // A duplicate success (2) is idempotent.
+    // Delayed failure (-2), cancellation (-1), or pending (0) must NOT regress a confirmed/completed payment.
+    if (hasCompletedPayment) {
+      if (payload.status_code === '2' || payload.status_code === '0' || payload.status_code === '-1' || payload.status_code === '-2') {
+        console.log(`[PayHere Webhook] ℹ️ Order ${order.orderNumber} already has a completed payment. Ignoring out-of-order/duplicate callback with status ${payload.status_code}.`);
+        return {
+          success: true,
+          status: 'COMPLETED',
+          message: 'Payment already completed; out-of-order callback safely ignored',
+          duplicate: true,
+          idempotent: true,
+        };
+      }
+      // Note: status_code -3 (CHARGEBACK) is permitted through to process bank dispute
     }
 
     const statusCode = payload.status_code;
 
     // 5. Status Mapping & Atomic Database State Machine
     if (statusCode === '2') {
+      const isOrderAlreadyCancelled = order.status === OrderStatus.CANCELLED;
+
       // SUCCESS (COMPLETED)
       await prisma.$transaction(async (tx) => {
         // Find existing payment or create
         const paymentRecord = order.payments.find((p) => p.paymentMethod === PaymentMethod.CARD) || order.payments[0];
+
+        const gatewayResponse = JSON.parse(
+          JSON.stringify({
+            ...payload,
+            ...(isOrderAlreadyCancelled && {
+              flaggedForReconciliation: true,
+              reconciliationReason: 'PAYMENT_CAPTURED_AFTER_ORDER_CANCELLED',
+              flaggedAt: new Date(),
+            }),
+          })
+        );
 
         if (paymentRecord) {
           await tx.payment.update({
@@ -188,7 +211,7 @@ export class PaymentService {
               status: PaymentStatus.COMPLETED,
               transactionId: payload.payment_id,
               gatewayProvider: payload.method || 'PayHere',
-              gatewayResponse: JSON.parse(JSON.stringify(payload)),
+              gatewayResponse,
             },
           });
         } else {
@@ -201,9 +224,15 @@ export class PaymentService {
               currency: 'LKR',
               transactionId: payload.payment_id,
               gatewayProvider: payload.method || 'PayHere',
-              gatewayResponse: JSON.parse(JSON.stringify(payload)),
+              gatewayResponse,
             },
           });
+        }
+
+        // If order was already cancelled, preserve cancelled state and flag for reconciliation
+        if (isOrderAlreadyCancelled) {
+          console.warn(`[PayHere Webhook] ⚠️ Payment captured for ALREADY CANCELLED order ${order.orderNumber}. Preserving CANCELLED state and flagging for refund reconciliation.`);
+          return;
         }
 
         // Advance Order to CONFIRMED ONLY if currently in PENDING state (Never regress terminal orders)
@@ -276,6 +305,15 @@ export class PaymentService {
           }
         }
       }, { timeout: 20000, maxWait: 10000 });
+
+      if (order.status === OrderStatus.CANCELLED) {
+        return {
+          success: true,
+          status: 'COMPLETED_CANCELLED_ORDER',
+          message: 'Payment captured for cancelled order; flagged for reconciliation',
+          flaggedForReconciliation: true,
+        };
+      }
 
       console.log(`[PayHere Webhook] ✅ Order ${order.orderNumber} successfully marked as PAID and CONFIRMED.`);
 
