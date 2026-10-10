@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
@@ -53,8 +54,8 @@ export class AuthService {
     const salt = await bcryptjs.genSalt(10);
     const passwordHash = await bcryptjs.hash(data.password, salt);
 
-    // Secure OTP Generation & Hashing
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Cryptographically Secure OTP Generation & Hashing
+    const otpCode = randomInt(100000, 1000000).toString();
     const otpSalt = await bcryptjs.genSalt(10);
     const hashedOtp = await bcryptjs.hash(otpCode, otpSalt);
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
@@ -146,7 +147,7 @@ export class AuthService {
       }
     }
 
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpCode = randomInt(100000, 1000000).toString();
     const otpSalt = await bcryptjs.genSalt(10);
     const hashedOtp = await bcryptjs.hash(otpCode, otpSalt);
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import prisma from '../config/database.js';
 import orderRepository, { CreateOrderItemInput } from '../repositories/order.repository.js';
 import couponService from './coupon.service.js';
@@ -298,9 +299,9 @@ export class OrderService {
 
     const grandTotal = Math.max(0, calculatedSubtotal + deliveryFee - discount - loyaltyDiscount);
 
-    // 7. Generate Collision-Safe Unique Order Number
+    // 7. Generate Collision-Safe Unique Order Number (Cryptographically Secure)
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomHex = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const randomHex = randomBytes(3).toString('hex').toUpperCase();
     const orderNumber = `TZL-${dateStr}-${randomHex}`;
 
     // Estimated preparation time: 30 mins from now

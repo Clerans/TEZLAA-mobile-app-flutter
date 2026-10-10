@@ -26,9 +26,9 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
       try {
         const decoded = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
         (socket as any).user = decoded;
-      } catch (err) {
-        // Token invalid, allow anonymous or reject based on policy
-        console.warn(`Socket auth token invalid for socket: ${socket.id}`);
+      } catch (err: any) {
+        console.warn(`Socket auth token invalid for socket ${socket.id}: ${err?.message || err}`);
+        return next(new Error('Authentication error: Invalid or expired token'));
       }
     }
     next();
@@ -55,7 +55,12 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
     }
 
     const handleJoinKds = (data?: any) => {
-      if (user?.role === 'ADMIN') {
+      if (!user) {
+        socket.emit('socket:error', { message: 'Authentication required for KDS access' });
+        return;
+      }
+
+      if (user.role === 'ADMIN') {
         socket.join('admin:orders');
         const targetBranch = data?.branchId;
         if (targetBranch) {
@@ -63,7 +68,7 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
           console.log(`🍳 Admin socket ${socket.id} joined KDS branch room: branch:${targetBranch}`);
         }
         socket.emit('kds:joined', { success: true });
-      } else if (user?.role === 'BRANCH_STAFF' || user?.role === 'BRANCH_MANAGER') {
+      } else if (user.role === 'BRANCH_STAFF' || user.role === 'BRANCH_MANAGER') {
         // Strict branch isolation: staff can ONLY join their own assigned branch
         if (user.branchId) {
           socket.join(`branch:${user.branchId}`);
@@ -72,6 +77,8 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
         } else {
           socket.emit('socket:error', { message: 'No branch assigned to staff account' });
         }
+      } else {
+        socket.emit('socket:error', { message: 'Unauthorized: Staff or Admin role required for KDS access' });
       }
     };
 
