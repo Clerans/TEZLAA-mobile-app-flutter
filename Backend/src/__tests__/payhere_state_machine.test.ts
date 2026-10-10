@@ -280,4 +280,84 @@ describe('PayHere Status Code State Machine (2, 0, -1, -2, -3)', () => {
       })
     );
   });
+
+  it('Delayed Failure after Success: should NOT regress completed payment or confirmed order', async () => {
+    const mockOrder = createMockOrder(OrderStatus.CONFIRMED);
+    mockOrder.payments[0].status = PaymentStatus.COMPLETED;
+    mockOrder.payments[0].transactionId = 'PAYHERE_TXN_001';
+
+    const signature = payHereProvider.generateNotificationSignature(
+      testOrderId,
+      testGrandTotal.toFixed(2),
+      'LKR',
+      '-2'
+    );
+
+    jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(mockOrder as any);
+    const txSpy = jest.spyOn(prisma, '$transaction');
+
+    const result = await paymentService.handlePayHereWebhook({
+      merchant_id: merchantId,
+      order_id: testOrderId,
+      payment_id: 'PAYHERE_TXN_DELAYED_FAIL',
+      payhere_amount: testGrandTotal.toFixed(2),
+      payhere_currency: 'LKR',
+      status_code: '-2',
+      md5sig: signature,
+      method: 'VISA',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.idempotent).toBe(true);
+    expect(result.status).toBe('COMPLETED');
+    expect(txSpy).not.toHaveBeenCalled();
+  });
+
+  it('Success after Order Cancellation: captures money, preserves CANCELLED status, and flags for reconciliation', async () => {
+    const mockOrder = createMockOrder(OrderStatus.CANCELLED);
+    const signature = payHereProvider.generateNotificationSignature(
+      testOrderId,
+      testGrandTotal.toFixed(2),
+      'LKR',
+      '2'
+    );
+
+    jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(mockOrder as any);
+    const mockTx = {
+      payment: { update: jest.fn().mockResolvedValue({}) },
+      order: { update: jest.fn().mockResolvedValue({}) },
+    };
+    jest.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) => cb(mockTx));
+
+    const result = await paymentService.handlePayHereWebhook({
+      merchant_id: merchantId,
+      order_id: testOrderId,
+      payment_id: 'PAYHERE_TXN_LATE_SUCCESS',
+      payhere_amount: testGrandTotal.toFixed(2),
+      payhere_currency: 'LKR',
+      status_code: '2',
+      md5sig: signature,
+      method: 'VISA',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('COMPLETED_CANCELLED_ORDER');
+    expect(result.flaggedForReconciliation).toBe(true);
+
+    // Order status must NOT regress to CONFIRMED
+    expect(mockTx.order.update).not.toHaveBeenCalled();
+
+    // Payment must be recorded as COMPLETED with reconciliation flags
+    expect(mockTx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: PaymentStatus.COMPLETED,
+          gatewayResponse: expect.objectContaining({
+            flaggedForReconciliation: true,
+            reconciliationReason: 'PAYMENT_CAPTURED_AFTER_ORDER_CANCELLED',
+          }),
+        }),
+      })
+    );
+  });
 });
