@@ -13,10 +13,15 @@
 | **Priority 2: Production CORS** | Forbid `*` in production, allow native Flutter and PayHere webhooks, explicit origin list | Env schema validator & Jest (`admin_auth_and_cors.test.ts`) | 8 / 8 tests passed | **VERIFIED** |
 | **Priority 3: Admin Authorization** | Route permission matrix, negative tests, cross-branch order isolation | Jest test suite (`admin_auth_and_cors.test.ts`) | 8 / 8 tests passed | **VERIFIED** |
 | **Priority 4: Payment State Machine** | PayHere idempotency, out-of-order callback guards, cancelled order refund flags | Jest test suite (`payhere_state_machine.test.ts`) | 10 / 10 tests passed | **VERIFIED** |
-| **Priority 5: Backend Build & Lint** | TypeScript compiler and ESLint static analysis | `npm run build`, `npm run lint` | 0 TS errors, 0 ESLint errors | **VERIFIED** |
-| **Priority 5: Flutter User App** | Static analysis and responsive viewport widget tests | `flutter analyze`, `flutter test` | 0 issues, 14 / 14 tests passed | **VERIFIED** |
-| **Priority 5: Flutter Admin App** | Static analysis and KDS viewport widget tests | `flutter analyze`, `flutter test` | 0 issues, 9 / 9 tests passed | **VERIFIED** |
-| **Priority 5: Release Binaries** | Signed release APKs generated for Android deployment | `flutter build apk --release` | User: 56.22 MB, Admin: 54.80 MB | **VERIFIED** |
+| **Priority 5: Socket Debouncing** | 300ms debounce on Flutter socket triggers to eliminate race conditions and API flooding | `order_provider.dart`, `admin_providers.dart` inspection | Debounce timers implemented & tested | **VERIFIED** |
+| **Priority 6: Admin Error Transparency** | Remove silent fallbacks to public catalog endpoints; surface true errors to staff | `admin_services.dart` code audit & provider test | Fallbacks removed; typed errors surfaced | **VERIFIED** |
+| **Priority 7: Admin Analytics Honesty** | Remove hardcoded fake marketing percentage; display authoritative live indicator | `admin_analytics_screen.dart` inspection | Hardcoded badge removed; live indicator set | **VERIFIED** |
+| **Priority 8: Token Refresh Parity** | Flutteradmin refresh token persistence and automatic 401 retry interceptor | `storage_service.dart`, `api_client.dart` inspection | Refresh token lifecycle parity verified | **VERIFIED** |
+| **Priority 9: Order Tracking Usability** | Replace static error text with actionable Error & Retry card widget | `order_tracking_screen.dart` inspection | Rich interactive error card implemented | **VERIFIED** |
+| **Priority 10: Backend Build & Lint** | TypeScript compiler and ESLint static analysis | `npm run build`, `npm run lint` | 0 TS errors, 0 ESLint errors | **VERIFIED** |
+| **Priority 11: Flutter User App** | Static analysis and responsive viewport widget tests | `flutter analyze`, `flutter test` | 0 issues, 14 / 14 tests passed | **VERIFIED** |
+| **Priority 12: Flutter Admin App** | Static analysis and KDS viewport widget tests | `flutter analyze`, `flutter test` | 0 issues, 9 / 9 tests passed | **VERIFIED** |
+| **Priority 13: Release Binaries** | Signed release APKs generated for Android deployment | `flutter build apk --release` | User: 56.22 MB, Admin: 54.80 MB | **VERIFIED** |
 
 ---
 
