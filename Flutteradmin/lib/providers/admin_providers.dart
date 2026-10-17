@@ -126,14 +126,18 @@ final kdsOrdersProvider = StreamProvider.autoDispose<List<AdminOrderModel>>((ref
 
   // 2. Set up event stream listener + periodic heartbeat (25s fallback)
   final controller = StreamController<List<AdminOrderModel>>();
+  Timer? socketDebounceTimer;
 
-  final sub = socketService.orderEvents.listen((_) async {
-    try {
-      lastOrders = await fetchActive();
-      if (!controller.isClosed) controller.add(lastOrders);
-    } catch (e) {
-      debugPrint('KDS real-time update error: $e');
-    }
+  final sub = socketService.orderEvents.listen((_) {
+    socketDebounceTimer?.cancel();
+    socketDebounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        lastOrders = await fetchActive();
+        if (!controller.isClosed) controller.add(lastOrders);
+      } catch (e) {
+        debugPrint('KDS real-time update error: $e');
+      }
+    });
   });
 
   final timer = Timer.periodic(const Duration(seconds: 25), (_) async {
@@ -146,6 +150,7 @@ final kdsOrdersProvider = StreamProvider.autoDispose<List<AdminOrderModel>>((ref
   });
 
   ref.onDispose(() {
+    socketDebounceTimer?.cancel();
     sub.cancel();
     timer.cancel();
     controller.close();

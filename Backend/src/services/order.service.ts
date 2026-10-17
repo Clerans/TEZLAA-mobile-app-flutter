@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import prisma from '../config/database.js';
 import orderRepository, { CreateOrderItemInput } from '../repositories/order.repository.js';
 import couponService from './coupon.service.js';
@@ -8,6 +9,7 @@ import loyaltyService from './loyalty.service.js';
 import deliveryService from './delivery.service.js';
 import { emitOrderStatusUpdated, emitOrderCreated } from '../sockets/index.js';
 import { ApiError } from '../utils/apiError.js';
+import { roundMoney } from '../utils/money.js';
 import { OrderStatus, OrderType, PaymentMethod, PaymentStatus } from '@prisma/client';
 
 export interface ValidateCartDTO {
@@ -238,9 +240,9 @@ export class OrderService {
         }
       }
 
-      const itemUnitPrice = baseUnitPrice + addonsSum;
-      const itemTotalPrice = itemUnitPrice * item.quantity;
-      calculatedSubtotal += itemTotalPrice;
+      const itemUnitPrice = roundMoney(baseUnitPrice + addonsSum);
+      const itemTotalPrice = roundMoney(itemUnitPrice * item.quantity);
+      calculatedSubtotal = roundMoney(calculatedSubtotal + itemTotalPrice);
 
       validatedOrderItems.push({
         productId: product.id,
@@ -296,11 +298,11 @@ export class OrderService {
       loyaltyDiscount = reward.discountValue || 0;
     }
 
-    const grandTotal = Math.max(0, calculatedSubtotal + deliveryFee - discount - loyaltyDiscount);
+    const grandTotal = roundMoney(Math.max(0, calculatedSubtotal + deliveryFee - discount - loyaltyDiscount));
 
-    // 7. Generate Collision-Safe Unique Order Number
+    // 7. Generate Collision-Safe Unique Order Number (Cryptographically Secure)
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomHex = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const randomHex = randomBytes(3).toString('hex').toUpperCase();
     const orderNumber = `TZL-${dateStr}-${randomHex}`;
 
     // Estimated preparation time: 30 mins from now
@@ -640,9 +642,9 @@ export class OrderService {
         }
       }
 
-      const authoritativeUnit = basePrice + addonsSum;
-      const itemTotal = authoritativeUnit * item.quantity;
-      authoritativeSubtotal += itemTotal;
+      const authoritativeUnit = roundMoney(basePrice + addonsSum);
+      const itemTotal = roundMoney(authoritativeUnit * item.quantity);
+      authoritativeSubtotal = roundMoney(authoritativeSubtotal + itemTotal);
 
       if (item.clientUnitPrice !== undefined && item.clientUnitPrice !== authoritativeUnit) {
         hasPriceChanges = true;

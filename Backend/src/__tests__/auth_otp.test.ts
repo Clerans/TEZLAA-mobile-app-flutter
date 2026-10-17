@@ -129,4 +129,42 @@ describe('Auth & OTP Purpose Isolation Tests', () => {
     expect(res.accessToken).toBeDefined();
     expect(res.refreshToken).toBeDefined();
   });
+
+  it('OTP Expiry: rejects verification if code has expired', async () => {
+    const rawOtp = '112233';
+    const otpHash = await bcryptjs.hash(rawOtp, 10);
+    const mockUser = {
+      id: 'usr-6',
+      email: 'expired@test.com',
+      isVerified: false,
+      otpCode: `REGISTER$${otpHash}`,
+      otpExpiresAt: new Date(Date.now() - 1000), // Expired 1 second ago
+      otpAttempts: 0,
+    };
+
+    jest.spyOn(userRepository, 'findByEmail').mockResolvedValue(mockUser as any);
+
+    await expect(
+      authService.verifyOtp('expired@test.com', rawOtp, 'REGISTER')
+    ).rejects.toThrow('Verification code has expired. Please request a new one.');
+  });
+
+  it('OTP Lockout: rejects verification when attempt limit (5) exceeded', async () => {
+    const rawOtp = '445566';
+    const otpHash = await bcryptjs.hash(rawOtp, 10);
+    const mockUser = {
+      id: 'usr-7',
+      email: 'locked@test.com',
+      isVerified: false,
+      otpCode: `REGISTER$${otpHash}`,
+      otpExpiresAt: new Date(Date.now() + 600000),
+      otpAttempts: 5, // Locked out
+    };
+
+    jest.spyOn(userRepository, 'findByEmail').mockResolvedValue(mockUser as any);
+
+    await expect(
+      authService.verifyOtp('locked@test.com', rawOtp, 'REGISTER')
+    ).rejects.toThrow('Too many failed verification attempts. Please request a new code.');
+  });
 });

@@ -21,9 +21,12 @@ export const createApp = (): Express => {
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (e.g. mobile apps, Postman, server-to-server webhooks)
+        // Allow non-browser requests with no origin (native Flutter apps, server-to-server PayHere webhooks, tests)
         if (!origin) return callback(null, true);
-        if (env.CORS_ORIGIN === '*' || allowedOrigins.includes(origin)) {
+        if (env.NODE_ENV !== 'production' && env.CORS_ORIGIN === '*') {
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes(origin)) {
           return callback(null, true);
         }
         return callback(new ApiError(403, `CORS origin '${origin}' not permitted`));

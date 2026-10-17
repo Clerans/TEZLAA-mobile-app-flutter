@@ -17,6 +17,11 @@ export class EmailService {
       </div>
     `;
 
+    // In test environment, bypass external network requests to prevent test pollution & open handles
+    if (env.NODE_ENV === 'test') {
+      return true;
+    }
+
     // 1. Send via Brevo HTTPS API
     if (env.BREVO_API_KEY) {
       try {

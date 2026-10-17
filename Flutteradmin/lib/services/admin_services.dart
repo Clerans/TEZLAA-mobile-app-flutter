@@ -17,10 +17,14 @@ class AdminAuthService {
 
       final data = response.data['data'] ?? response.data;
       final token = data['tokens']?['accessToken'] ?? data['accessToken'] ?? data['token'] ?? '';
+      final refreshToken = data['tokens']?['refreshToken'] ?? data['refreshToken'] ?? '';
       final userJson = data['user'] ?? data;
 
       final user = AdminUserModel.fromJson(userJson);
       await _storage.saveToken(token);
+      if (refreshToken.toString().isNotEmpty) {
+        await _storage.saveRefreshToken(refreshToken.toString());
+      }
       await _storage.saveUserData(jsonEncode(userJson));
 
       return user;
@@ -67,31 +71,14 @@ class AdminProductService {
   final AdminApiClient _client = AdminApiClient();
 
   Future<List<AdminProductModel>> getProducts({String? categoryId, String? search}) async {
-    try {
-      final response = await _client.dio.get('/admin/products', queryParameters: {
-        if (categoryId != null && categoryId != 'all') 'categoryId': categoryId,
-        if (search != null && search.isNotEmpty) 'search': search,
-      });
+    final response = await _client.dio.get('/admin/products', queryParameters: {
+      if (categoryId != null && categoryId != 'all') 'categoryId': categoryId,
+      if (search != null && search.isNotEmpty) 'search': search,
+    });
 
-      final data = response.data['data'] ?? response.data;
-      final List items = data is List ? data : (data['items'] as List? ?? []);
-      return items.map((i) => AdminProductModel.fromJson(i as Map<String, dynamic>)).toList();
-    } catch (e) {
-      debugPrint('AdminProductService.getProducts admin endpoint fallback: $e');
-      try {
-        // Fallback to public catalog products endpoint
-        final fallback = await _client.dio.get('/products', queryParameters: {
-          if (categoryId != null && categoryId != 'all') 'categoryId': categoryId,
-          if (search != null && search.isNotEmpty) 'search': search,
-        });
-        final data = fallback.data['data'] ?? fallback.data;
-        final List items = data is List ? data : (data['items'] as List? ?? []);
-        return items.map((i) => AdminProductModel.fromJson(i as Map<String, dynamic>)).toList();
-      } catch (e2) {
-        debugPrint('AdminProductService.getProducts catalog fallback error: $e2');
-        rethrow;
-      }
-    }
+    final data = response.data['data'] ?? response.data;
+    final List items = data is List ? data : (data['items'] as List? ?? []);
+    return items.map((i) => AdminProductModel.fromJson(i as Map<String, dynamic>)).toList();
   }
 
   Future<void> toggleAvailability(String productId, bool isAvailable) async {
@@ -118,23 +105,10 @@ class AdminCategoryService {
   final AdminApiClient _client = AdminApiClient();
 
   Future<List<AdminCategoryModel>> getCategories() async {
-    try {
-      final response = await _client.dio.get('/admin/categories');
-      final data = response.data['data'] ?? response.data;
-      final List items = data is List ? data : (data['items'] as List? ?? []);
-      return items.map((i) => AdminCategoryModel.fromJson(i as Map<String, dynamic>)).toList();
-    } catch (e) {
-      debugPrint('AdminCategoryService.getCategories admin fallback: $e');
-      try {
-        final fallback = await _client.dio.get('/categories');
-        final data = fallback.data['data'] ?? fallback.data;
-        final List items = data is List ? data : (data['items'] as List? ?? []);
-        return items.map((i) => AdminCategoryModel.fromJson(i as Map<String, dynamic>)).toList();
-      } catch (e2) {
-        debugPrint('AdminCategoryService.getCategories error: $e2');
-        rethrow;
-      }
-    }
+    final response = await _client.dio.get('/admin/categories');
+    final data = response.data['data'] ?? response.data;
+    final List items = data is List ? data : (data['items'] as List? ?? []);
+    return items.map((i) => AdminCategoryModel.fromJson(i as Map<String, dynamic>)).toList();
   }
 }
 

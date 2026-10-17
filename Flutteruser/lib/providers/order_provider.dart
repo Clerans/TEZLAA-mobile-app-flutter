@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/order_model.dart';
 import '../services/order_service.dart';
@@ -14,15 +15,21 @@ final orderDetailProvider = FutureProvider.family<OrderModel, String>((ref, id) 
   final service = ref.watch(orderServiceProvider);
   final socket = SocketService();
 
+  Timer? debounceTimer;
+
   await socket.connect();
   socket.joinOrder(id);
   final unbind = socket.onOrderStatusUpdated((payload) {
     if (payload['orderId'] == id || payload['orderNumber'] == id) {
-      ref.invalidateSelf();
+      debounceTimer?.cancel();
+      debounceTimer = Timer(const Duration(milliseconds: 300), () {
+        ref.invalidateSelf();
+      });
     }
   });
 
   ref.onDispose(() {
+    debounceTimer?.cancel();
     unbind();
     socket.leaveOrder(id);
   });

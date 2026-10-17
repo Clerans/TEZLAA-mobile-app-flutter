@@ -35,14 +35,22 @@ const envSchema = z
   .refine(
     (data) => {
       if (data.NODE_ENV === 'production') {
+        const isWildcardCors = data.CORS_ORIGIN.trim() === '*';
         const isDefaultJwt = data.JWT_SECRET === 'super_secret_jwt_key_tezlaa_development_2026';
         const isDefaultRefresh = data.JWT_REFRESH_SECRET === 'super_secret_refresh_jwt_key_tezlaa_development_2026';
-        return !isDefaultJwt && !isDefaultRefresh && data.JWT_SECRET.length >= 16 && data.JWT_REFRESH_SECRET.length >= 16;
+        return (
+          !isWildcardCors &&
+          !isDefaultJwt &&
+          !isDefaultRefresh &&
+          data.JWT_SECRET.length >= 16 &&
+          data.JWT_REFRESH_SECRET.length >= 16
+        );
       }
       return true;
     },
     {
-      message: 'In production mode, strong non-default JWT_SECRET and JWT_REFRESH_SECRET (min 16 chars) must be configured.',
+      message:
+        'In production mode, strong non-default JWT_SECRET/JWT_REFRESH_SECRET (min 16 chars) and explicit non-wildcard CORS_ORIGIN must be configured.',
     }
   );
 
