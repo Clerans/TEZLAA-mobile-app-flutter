@@ -75,11 +75,11 @@ class AdminAnalyticsScreen extends ConsumerWidget {
                         const SizedBox(height: 8),
                         Row(
                           children: const [
-                            Icon(LucideIcons.trendingUp, size: 16, color: AppColors.green),
-                            SizedBox(width: 4),
+                            Icon(LucideIcons.activity, size: 14, color: AppColors.neutral400),
+                            SizedBox(width: 6),
                             Text(
-                              '+18.4% compared to previous cycle',
-                              style: TextStyle(color: AppColors.green, fontSize: 12, fontWeight: FontWeight.w700),
+                              'Live aggregated metric across authorized branches',
+                              style: TextStyle(color: AppColors.neutral400, fontSize: 12, fontWeight: FontWeight.w500),
                             ),
                           ],
                         ),
