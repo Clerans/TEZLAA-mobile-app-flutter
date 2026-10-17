@@ -387,7 +387,63 @@ class OrderTrackingScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-        error: (_, __) => const Center(child: Text('Order tracking unavailable')),
+        error: (err, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppColors.red.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Icon(LucideIcons.alertCircle, color: AppColors.red, size: 32),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Order Tracking Unavailable',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.neutral900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  err.toString().replaceAll('Exception: ', ''),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.neutral500,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                TezlaaButton(
+                  title: 'Retry Live Tracking',
+                  onPress: () => ref.invalidate(orderDetailProvider(orderId)),
+                  variant: TezlaaButtonVariant.primary,
+                  size: TezlaaButtonSize.md,
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => context.go('/home'),
+                  child: const Text(
+                    'Return to Home',
+                    style: TextStyle(
+                      color: AppColors.neutral700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
